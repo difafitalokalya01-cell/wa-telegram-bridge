@@ -168,4 +168,52 @@ async function scanUnread(waId) {
       await onUnreadFound(waId, unreadChats);
     }
   } catch (err) {
-    logger.err
+    logger.error("WA-Manager", `Gagal scan unread ${waId}: ${err.message}`);
+  }
+}
+
+async function kirimPesan(waId, jid, pesan, media = null) {
+  const sock = instances[waId]?.sock;
+  if (!sock) throw new Error(`${waId} tidak terhubung`);
+  if (media) {
+    await sock.sendMessage(jid, media);
+  } else {
+    await sock.sendMessage(jid, { text: pesan });
+  }
+}
+
+async function disconnectWA(waId) {
+  const sock = instances[waId]?.sock;
+  if (!sock) throw new Error(`${waId} tidak ditemukan`);
+  await sock.logout();
+  delete instances[waId];
+  const authPath = path.join(AUTH_DIR, waId);
+  if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true });
+  logger.info("WA-Manager", `${waId} berhasil dihapus`);
+}
+
+function getStatus() {
+  const result = {};
+  for (const [waId, instance] of Object.entries(instances)) {
+    result[waId] = { status: instance.status, jid: instance.jid };
+  }
+  return result;
+}
+
+function getInstance(waId) {
+  return instances[waId] || null;
+}
+
+function getAllIds() {
+  return Object.keys(instances);
+}
+
+module.exports = {
+  connectWA,
+  disconnectWA,
+  kirimPesan,
+  getStatus,
+  getInstance,
+  getAllIds,
+  setCallbacks,
+};
