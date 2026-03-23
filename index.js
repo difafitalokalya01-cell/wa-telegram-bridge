@@ -8,9 +8,52 @@ const botBridge = require("./bot-bridge");
 const botWa = require("./bot-wa");
 const botConfig = require("./bot-config");
 
-const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
+
+// ===== CONFIG MANAGEMENT =====
+// config.json dari GitHub = token & settings (tidak berubah)
+// auth_sessions/data.json = waAccounts & activeAccounts (persistent di volume)
+
+const CONFIG_FILE = "./config.json";
+const DATA_FILE = "./auth_sessions/data.json";
+
+function loadConfig() {
+  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+  // Load waAccounts & activeAccounts dari volume kalau ada
+  if (fs.existsSync(DATA_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+      config.waAccounts = data.waAccounts || {};
+      config.activeAccounts = data.activeAccounts || {};
+      config.blacklist = data.blacklist || config.blacklist || [];
+      config.queueSettings = data.queueSettings || config.queueSettings;
+    } catch (e) {
+      logger.error("Index", `Gagal load data.json: ${e.message}`);
+    }
+  }
+  return config;
+}
+
+function saveData(config) {
+  try {
+    const data = {
+      waAccounts: config.waAccounts || {},
+      activeAccounts: config.activeAccounts || {},
+      blacklist: config.blacklist || [],
+      queueSettings: config.queueSettings,
+    };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    logger.error("Index", `Gagal save data.json: ${e.message}`);
+  }
+}
+
+// Export fungsi saveData agar bisa dipakai bot-wa dan bot-config
+global.loadConfig = loadConfig;
+global.saveData = saveData;
+
+const config = loadConfig();
 
 const app = express();
 app.use(express.json());
@@ -81,7 +124,6 @@ app.listen(PORT, async () => {
       { token: config.botWaToken, path: "wa" },
       { token: config.botConfigToken, path: "config" },
     ];
-
     for (const bot of bots) {
       try {
         await axios.post(
@@ -95,11 +137,10 @@ app.listen(PORT, async () => {
     }
   }
 
-  const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
-  const accounts = cfg.waAccounts || {};
-
+  // Reconnect semua WA dari data.json di volume
+  const accounts = config.waAccounts || {};
   for (const waId of Object.keys(accounts)) {
-    if (cfg.activeAccounts[waId] === false) continue;
+    if (config.activeAccounts[waId] === false) continue;
     logger.info("Index", `Reconnect ${waId}...`);
     try {
       await waManager.connectWA(waId);
