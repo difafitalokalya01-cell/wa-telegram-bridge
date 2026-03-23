@@ -1,9 +1,9 @@
 {
-  "adminTelegramId": "GANTI_DENGAN_TELEGRAM_USER_ID_KAMU",
-  "botBridgeToken": "GANTI_DENGAN_TOKEN_BOT_BRIDGE",
-  "botWaToken": "GANTI_DENGAN_TOKEN_BOT_WA",
-  "botConfigToken": "GANTI_DENGAN_TOKEN_BOT_CONFIG",
-  "telegramChatId": "GANTI_DENGAN_CHAT_ID_KAMU",
+  "adminTelegramId": "5846121015",
+  "botBridgeToken": "8458582546:AAEajr73kZF8iISDDRnRxc2yNfgwBHeFeoI",
+  "botWaToken": "8624849307:AAGXxJ4eOLLL3DYQJXQcpQSY0fuJI5GArho",
+  "botConfigToken": "8340988071:AAEaAMarL5IbkCnWYatBo0NF1rcjQ6Rr9bE",
+  "telegramChatId": "5846121015",
   "waAccounts": {},
   "blacklist": [],
   "queueSettings": {
