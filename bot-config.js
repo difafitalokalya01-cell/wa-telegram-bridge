@@ -54,7 +54,7 @@ async function prosesPerintah(msg) {
       `/setjedabaca sedang 60 180\n` +
       `/setjedabaca panjang 180 420\n\n` +
       `<b>Jeda Pikir (detik):</b>\n` +
-      `/setjedapikir 120 300\n\n` +
+      `/setjedapikir 30 600\n\n` +
       `<b>Jeda Pindah Chat (detik):</b>\n` +
       `/setjedachat 120 480\n\n` +
       `<b>Jeda Ketik:</b>\n` +
