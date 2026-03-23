@@ -10,7 +10,7 @@ const TELEGRAM_CHAT_ID = "5846121015";
 const EVOLUTION_API_URL = "https://evolution-api-production-2c80.up.railway.app";
 const EVOLUTION_API_KEY = "minha-chave-secreta";
 const EVOLUTION_INSTANCE = "wa-cloud";
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // ===== KIRIM PESAN KE TELEGRAM =====
 async function kirimKeTelegram(teks) {
@@ -31,23 +31,29 @@ async function kirimKeTelegram(teks) {
 // ===== KIRIM PESAN KE WHATSAPP =====
 async function kirimKeWA(nomor, pesan) {
   try {
+    // Bersihkan nomor dari @lid atau @s.whatsapp.net
+    const nomorBersih = nomor
+      .replace("@s.whatsapp.net", "")
+      .replace("@lid", "");
+
     await axios.post(
       `${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
       {
-        number: nomor,
+        number: nomorBersih,
+        options: { delay: 1000 },
         textMessage: { text: pesan },
       },
       {
         headers: { apikey: EVOLUTION_API_KEY },
       }
     );
+    console.log(`Berhasil kirim ke WA ${nomorBersih}: ${pesan}`);
   } catch (err) {
-    console.error("Gagal kirim ke WA:", err.message);
+    console.error("Gagal kirim ke WA:", err.response?.data || err.message);
   }
 }
 
 // ===== SIMPAN NOMOR TERAKHIR YANG CHAT =====
-// Supaya bisa balas ke nomor yang benar
 let nomorTerakhir = null;
 
 // ===== WEBHOOK DARI EVOLUTION API (WA masuk) =====
@@ -61,21 +67,24 @@ app.post("/webhook/wa", async (req, res) => {
     if (data.event !== "messages.upsert") return;
     if (data.data?.key?.fromMe) return;
 
-    const pesan = data.data?.message?.conversation
-      || data.data?.message?.extendedTextMessage?.text
-      || "[Media/Sticker]";
+    const pesan =
+      data.data?.message?.conversation ||
+      data.data?.message?.extendedTextMessage?.text ||
+      "[Media/Sticker]";
 
-    const dari = data.data?.key?.remoteJid?.replace("@s.whatsapp.net", "");
+    const dari = data.data?.key?.remoteJid || "";
     const namaPengirim = data.data?.pushName || dari;
 
-    // Simpan nomor terakhir
-    nomorTerakhir = dari;
+    // Simpan nomor terakhir (sudah dibersihkan)
+    nomorTerakhir = dari
+      .replace("@s.whatsapp.net", "")
+      .replace("@lid", "");
 
     // Forward ke Telegram
-    const teksKeTelegram = `📱 <b>WA dari ${namaPengirim}</b> (${dari}):\n\n${pesan}\n\n<i>Balas dengan format: /balas pesanmu</i>`;
+    const teksKeTelegram = `📱 <b>WA dari ${namaPengirim}</b> (${nomorTerakhir}):\n\n${pesan}\n\n<i>Balas: /balas pesanmu\nKirim ke nomor lain: /ke 628xxx pesanmu</i>`;
     await kirimKeTelegram(teksKeTelegram);
 
-    console.log(`WA masuk dari ${namaPengirim}: ${pesan}`);
+    console.log(`WA masuk dari ${namaPengirim} (${nomorTerakhir}): ${pesan}`);
   } catch (err) {
     console.error("Error webhook WA:", err.message);
   }
@@ -91,7 +100,7 @@ app.post("/webhook/telegram", async (req, res) => {
 
     const teks = msg.text || "";
 
-    // Format balas: /balas pesannya
+    // /balas pesannya → balas ke nomor terakhir
     if (teks.startsWith("/balas ")) {
       const pesanBalas = teks.replace("/balas ", "");
 
@@ -101,22 +110,25 @@ app.post("/webhook/telegram", async (req, res) => {
       }
 
       await kirimKeWA(nomorTerakhir, pesanBalas);
-      await kirimKeTelegram(`✅ Pesan terkirim ke WA (${nomorTerakhir}): ${pesanBalas}`);
-      console.log(`Balas ke WA ${nomorTerakhir}: ${pesanBalas}`);
+      await kirimKeTelegram(`✅ Pesan terkirim ke WA (${nomorTerakhir}):\n${pesanBalas}`);
     }
 
-    // Format balas ke nomor tertentu: /ke 628xxx pesannya
+    // /ke 628xxx pesannya → kirim ke nomor tertentu
     else if (teks.startsWith("/ke ")) {
       const bagian = teks.replace("/ke ", "").split(" ");
       const nomor = bagian[0];
       const pesanBalas = bagian.slice(1).join(" ");
 
+      if (!pesanBalas) {
+        await kirimKeTelegram("❌ Format salah. Gunakan: /ke 628xxx pesanmu");
+        return;
+      }
+
       await kirimKeWA(nomor, pesanBalas);
-      await kirimKeTelegram(`✅ Pesan terkirim ke WA (${nomor}): ${pesanBalas}`);
-      console.log(`Kirim ke WA ${nomor}: ${pesanBalas}`);
+      await kirimKeTelegram(`✅ Pesan terkirim ke WA (${nomor}):\n${pesanBalas}`);
     }
 
-    // Info perintah
+    // /info → lihat status
     else if (teks === "/info") {
       const info = `ℹ️ <b>WA Bridge Bot</b>\n\nNomor terakhir chat: ${nomorTerakhir || "belum ada"}\n\n<b>Perintah:</b>\n/balas [pesan] - Balas ke nomor terakhir\n/ke [nomor] [pesan] - Kirim ke nomor tertentu\n/info - Lihat info`;
       await kirimKeTelegram(info);
@@ -126,13 +138,17 @@ app.post("/webhook/telegram", async (req, res) => {
   }
 });
 
+// ===== ROOT =====
+app.get("/", (req, res) => {
+  res.send("WA-Telegram Bridge aktif! ✅");
+});
+
 // ===== START SERVER =====
 app.listen(PORT, async () => {
   console.log(`Bridge WA-Telegram jalan di port ${PORT}`);
 
-  // Set Telegram webhook
+  // Set Telegram webhook otomatis
   try {
-    // URL ini akan diisi setelah deploy ke Railway
     const webhookUrl = process.env.WEBHOOK_URL;
     if (webhookUrl) {
       await axios.post(
@@ -141,7 +157,7 @@ app.listen(PORT, async () => {
       );
       console.log("Telegram webhook berhasil diset ke:", webhookUrl);
     } else {
-      console.log("WEBHOOK_URL belum diset, Telegram webhook belum aktif");
+      console.log("WEBHOOK_URL belum diset");
     }
   } catch (err) {
     console.error("Gagal set Telegram webhook:", err.message);
