@@ -15,14 +15,10 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
 const app = express();
 app.use(express.json());
 
-// ===== SETUP CALLBACKS =====
 botBridge.setupCallbacks();
 botWa.setupQRCallback();
-
-// Update settings queue dari config
 queue.updateSettings(config.queueSettings);
 
-// ===== WEBHOOK BOT BRIDGE =====
 app.post("/webhook/bridge", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -33,7 +29,6 @@ app.post("/webhook/bridge", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK BOT WA =====
 app.post("/webhook/wa", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -44,7 +39,6 @@ app.post("/webhook/wa", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK BOT CONFIG =====
 app.post("/webhook/config", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -55,7 +49,6 @@ app.post("/webhook/config", async (req, res) => {
   }
 });
 
-// ===== HEALTH CHECK ENDPOINT =====
 app.get("/health", (req, res) => {
   const waStatus = waManager.getStatus();
   const qStatus = queue.getStatus();
@@ -69,7 +62,6 @@ app.get("/health", (req, res) => {
 
 app.get("/", (req, res) => res.send("WA-Telegram Bridge aktif! ✅"));
 
-// ===== GRACEFUL SHUTDOWN =====
 process.on("SIGTERM", () => {
   logger.info("Index", "SIGTERM diterima, shutdown gracefully...");
   process.exit(0);
@@ -80,11 +72,9 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-// ===== START SERVER =====
 app.listen(PORT, async () => {
   logger.info("Index", `Server jalan di port ${PORT}`);
 
-  // Set webhook untuk semua bot
   if (WEBHOOK_URL) {
     const bots = [
       { token: config.botBridgeToken, path: "bridge" },
@@ -105,7 +95,6 @@ app.listen(PORT, async () => {
     }
   }
 
-  // Reconnect semua WA yang tersimpan di config
   const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
   const accounts = cfg.waAccounts || {};
 
@@ -119,14 +108,3 @@ app.listen(PORT, async () => {
     }
   }
 });
-```
-
----
-
-**File 9 : `.gitignore`**
-```
-auth_sessions/
-logs/
-queue_backup.json
-node_modules/
-.env
