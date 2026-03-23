@@ -171,14 +171,15 @@ async function prosesPerintah(msg) {
 
   if (fromId !== String(ADMIN_ID)) return;
 
-  // Format baru: /#1 pesanmu
-  if (teks.match(/^\/#\d+/)) {
-    const spasi = teks.indexOf(" ");
-    if (spasi === -1) {
-      await kirimTeks("❌ Format: /#id pesanmu");
-      return;
-    }
-    const id = parseInt(teks.slice(2, spasi));
+// Format: /#1 pesanmu atau /1 pesanmu
+if (teks.match(/^\/#?\d+/)) {
+  const spasi = teks.indexOf(" ");
+  if (spasi === -1) {
+    await kirimTeks("❌ Format: /1 pesanmu");
+    return;
+  }
+  const idStr = teks.slice(1, spasi).replace("#", "");
+  const id = parseInt(idStr);
     const pesan = teks.slice(spasi + 1).trim();
     const chat = chatLog[id];
 
