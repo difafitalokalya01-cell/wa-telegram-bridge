@@ -11,16 +11,34 @@ const TOKEN = config.botBridgeToken;
 const CHAT_ID = config.telegramChatId;
 const ADMIN_ID = config.adminTelegramId;
 
-// Simpan daftar chat masuk { id: { waId, jid, nama, waktu } }
-let chatLog = {};
-let chatCounter = 0;
+const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
+const CHATLOG_FILE = "./chatlog.json";
 
-// Simpan pending unread confirmation { waId: [{ jid, name, unreadCount }] }
+// ===== LOAD & SAVE CHATLOG =====
+function loadChatLog() {
+  try {
+    if (fs.existsSync(CHATLOG_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CHATLOG_FILE, "utf-8"));
+      return { chatLog: data.chatLog || {}, chatCounter: data.chatCounter || 0 };
+    }
+  } catch (e) {
+    logger.error("Bot-Bridge", `Gagal load chatlog: ${e.message}`);
+  }
+  return { chatLog: {}, chatCounter: 0 };
+}
+
+function saveChatLog() {
+  try {
+    fs.writeFileSync(CHATLOG_FILE, JSON.stringify({ chatLog, chatCounter }, null, 2));
+  } catch (e) {
+    logger.error("Bot-Bridge", `Gagal save chatlog: ${e.message}`);
+  }
+}
+
+let { chatLog, chatCounter } = loadChatLog();
 let pendingUnread = {};
 
-const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
-
-// ===== KIRIM TEKS KE TELEGRAM =====
+// ===== KIRIM TEKS =====
 async function kirimTeks(teks, parseMode = "HTML") {
   try {
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -33,46 +51,46 @@ async function kirimTeks(teks, parseMode = "HTML") {
   }
 }
 
-// ===== KIRIM FOTO KE TELEGRAM =====
+// ===== KIRIM FOTO =====
 async function kirimFoto(buffer, caption = "") {
   try {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     form.append("photo", buffer, { filename: "photo.jpg", contentType: "image/jpeg" });
-    if (caption) form.append("caption", caption, { parse_mode: "HTML" });
+    if (caption) form.append("caption", caption);
     await axios.post(`${TELEGRAM_API}/sendPhoto`, form, { headers: form.getHeaders() });
   } catch (err) {
     logger.error("Bot-Bridge", `Gagal kirim foto: ${err.message}`);
   }
 }
 
-// ===== KIRIM VIDEO KE TELEGRAM =====
+// ===== KIRIM VIDEO =====
 async function kirimVideo(buffer, caption = "") {
   try {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     form.append("video", buffer, { filename: "video.mp4", contentType: "video/mp4" });
-    if (caption) form.append("caption", caption, { parse_mode: "HTML" });
+    if (caption) form.append("caption", caption);
     await axios.post(`${TELEGRAM_API}/sendVideo`, form, { headers: form.getHeaders() });
   } catch (err) {
     logger.error("Bot-Bridge", `Gagal kirim video: ${err.message}`);
   }
 }
 
-// ===== KIRIM DOKUMEN KE TELEGRAM =====
+// ===== KIRIM DOKUMEN =====
 async function kirimDokumen(buffer, filename, caption = "") {
   try {
     const form = new FormData();
     form.append("chat_id", CHAT_ID);
     form.append("document", buffer, { filename });
-    if (caption) form.append("caption", caption, { parse_mode: "HTML" });
+    if (caption) form.append("caption", caption);
     await axios.post(`${TELEGRAM_API}/sendDocument`, form, { headers: form.getHeaders() });
   } catch (err) {
     logger.error("Bot-Bridge", `Gagal kirim dokumen: ${err.message}`);
   }
 }
 
-// ===== KIRIM NOTIFIKASI ERROR =====
+// ===== KIRIM ERROR KE ADMIN =====
 async function kirimError(pesan) {
   try {
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -85,13 +103,14 @@ async function kirimError(pesan) {
   }
 }
 
-// ===== CALLBACK DARI WA MANAGER =====
+// ===== SETUP CALLBACKS =====
 function setupCallbacks() {
   waManager.setCallbacks({
     onMessage: async (waId, jid, nama, pesan) => {
       chatCounter++;
       const id = chatCounter;
       chatLog[id] = { waId, jid, nama, waktu: Date.now() };
+      saveChatLog();
 
       const teks =
         `📱 <b>[#${id}] ${waId}</b>\n` +
@@ -108,13 +127,14 @@ function setupCallbacks() {
       chatCounter++;
       const id = chatCounter;
       chatLog[id] = { waId, jid, nama, waktu: Date.now() };
+      saveChatLog();
 
       const info =
-        `📱 <b>[#${id}] ${waId}</b>\n` +
-        `👤 <b>${nama}</b>\n` +
-        `📞 <code>${jid.replace(/@.*/, "")}</code>\n` +
+        `📱 [#${id}] ${waId}\n` +
+        `👤 ${nama}\n` +
+        `📞 ${jid.replace(/@.*/, "")}\n` +
         (caption ? `💬 ${caption}\n` : "") +
-        `\n<i>Balas: /balas #${id} pesanmu</i>`;
+        `\nBalas: /balas #${id} pesanmu`;
 
       if (mediaType === "imageMessage") {
         await kirimFoto(buffer, info);
@@ -127,29 +147,11 @@ function setupCallbacks() {
       logger.info("Bot-Bridge", `Media masuk #${id} dari ${nama} via ${waId}`);
     },
 
-    onConnected: async (waId, jid) => {
-      await kirimTeks(
-        `✅ <b>${waId} terhubung!</b>\n` +
-        `📞 Nomor: <code>${jid.replace(/@.*/, "")}</code>`
-      );
-    },
-
-    onDisconnected: async (waId, willReconnect) => {
-      await kirimError(
-        `<b>${waId} terputus!</b>\n` +
-        `Reconnect otomatis: ${willReconnect ? "Ya" : "Tidak"}`
-      );
-    },
-
-    onQR: async (waId, qrString) => {
-      // QR ditangani oleh bot-wa.js
-    },
-
     onUnreadFound: async (waId, unreadChats) => {
       pendingUnread[waId] = unreadChats;
       const total = unreadChats.reduce((sum, c) => sum + c.unreadCount, 0);
       const daftar = unreadChats
-        .map((c) => `• ${c.name} (${c.unreadCount} pesan)`)
+        .map((c) => `- ${c.name} (${c.unreadCount} pesan)`)
         .join("\n");
 
       await kirimTeks(
@@ -162,25 +164,24 @@ function setupCallbacks() {
   });
 }
 
-// ===== PROSES PERINTAH TELEGRAM =====
+// ===== PROSES PERINTAH =====
 async function prosesPerintah(msg) {
   const teks = msg.text || "";
   const fromId = String(msg.from?.id);
 
-  // Proteksi admin
   if (fromId !== String(ADMIN_ID)) return;
 
   // /balas #id pesan
   if (teks.startsWith("/balas ")) {
-   const baris = teks.indexOf(" #");
-  const sisa = teks.slice(baris + 1);
-  const spasi = sisa.indexOf(" ");
-  if (baris === -1 || spasi === -1) {
-    await kirimTeks("❌ Format: /balas #id pesanmu");
-    return;
-  }
-  const id = parseInt(sisa.slice(1, spasi));
-  const pesan = sisa.slice(spasi + 1).trim();
+    const baris = teks.indexOf(" #");
+    const sisa = teks.slice(baris + 1);
+    const spasi = sisa.indexOf(" ");
+    if (baris === -1 || spasi === -1) {
+      await kirimTeks("❌ Format: /balas #id pesanmu");
+      return;
+    }
+    const id = parseInt(sisa.slice(1, spasi));
+    const pesan = sisa.slice(spasi + 1).trim();
     const chat = chatLog[id];
 
     if (!chat) {
@@ -202,14 +203,11 @@ async function prosesPerintah(msg) {
       await kirimTeks("❌ Format: /ke 628xxx pesanmu");
       return;
     }
-
-    // Pakai WA pertama yang aktif
     const waIds = waManager.getAllIds();
     if (waIds.length === 0) {
       await kirimTeks("❌ Tidak ada WA yang terhubung.");
       return;
     }
-
     const jid = nomor.includes("@") ? nomor : `${nomor}@s.whatsapp.net`;
     queue.tambahKeAntrian(waIds[0], jid, pesan);
     await kirimTeks(`✅ Pesan ke ${nomor} masuk antrian.`);
@@ -231,6 +229,7 @@ async function prosesPerintah(msg) {
       chatCounter++;
       const id = chatCounter;
       chatLog[id] = { waId, jid: chat.jid, nama: chat.name, waktu: Date.now() };
+      saveChatLog();
 
       await kirimTeks(
         `📬 <b>[#${id}] Unread - ${waId}</b>\n` +
@@ -258,7 +257,7 @@ async function prosesPerintah(msg) {
   else if (teks === "/status") {
     const waStatus = waManager.getStatus();
     const daftar = Object.entries(waStatus)
-      .map(([id, s]) => `• ${id}: ${s.status === "connected" ? "✅" : "❌"} ${s.jid?.replace(/@.*/, "") || ""}`)
+      .map(([id, s]) => `- ${id}: ${s.status === "connected" ? "✅" : "❌"} ${s.jid?.replace(/@.*/, "") || ""}`)
       .join("\n") || "Tidak ada WA terhubung";
 
     await kirimTeks(
@@ -269,6 +268,18 @@ async function prosesPerintah(msg) {
       `/ke nomor pesan\n` +
       `/antrian\n` +
       `/status`
+    );
+  }
+
+  // /start
+  else if (teks === "/start") {
+    await kirimTeks(
+      `👋 <b>WA Bridge Bot aktif!</b>\n\n` +
+      `<b>Perintah:</b>\n` +
+      `/balas #id pesan - Balas ke chat tertentu\n` +
+      `/ke nomor pesan - Kirim ke nomor baru\n` +
+      `/antrian - Cek status antrian\n` +
+      `/status - Cek status WA`
     );
   }
 }
