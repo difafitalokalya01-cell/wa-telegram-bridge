@@ -172,13 +172,15 @@ async function prosesPerintah(msg) {
 
   // /balas #id pesan
   if (teks.startsWith("/balas ")) {
-    const match = teks.match(/^\/balas #(\d+) (.+)$/s);
-    if (!match) {
-      await kirimTeks("❌ Format: /balas #id pesanmu");
-      return;
-    }
-    const id = parseInt(match[1]);
-    const pesan = match[2].trim();
+   const baris = teks.indexOf(" #");
+  const sisa = teks.slice(baris + 1);
+  const spasi = sisa.indexOf(" ");
+  if (baris === -1 || spasi === -1) {
+    await kirimTeks("❌ Format: /balas #id pesanmu");
+    return;
+  }
+  const id = parseInt(sisa.slice(1, spasi));
+  const pesan = sisa.slice(spasi + 1).trim();
     const chat = chatLog[id];
 
     if (!chat) {
