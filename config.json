@@ -1,0 +1,16 @@
+{
+  "adminTelegramId": "GANTI_DENGAN_TELEGRAM_USER_ID_KAMU",
+  "botBridgeToken": "GANTI_DENGAN_TOKEN_BOT_BRIDGE",
+  "botWaToken": "GANTI_DENGAN_TOKEN_BOT_WA",
+  "botConfigToken": "GANTI_DENGAN_TOKEN_BOT_CONFIG",
+  "telegramChatId": "GANTI_DENGAN_CHAT_ID_KAMU",
+  "waAccounts": {},
+  "blacklist": [],
+  "queueSettings": {
+    "typingSpeed": "normal",
+    "randomDelay": true,
+    "minDelay": 3,
+    "maxDelay": 10
+  },
+  "activeAccounts": {}
+}
