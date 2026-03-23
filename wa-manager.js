@@ -4,6 +4,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  makeInMemoryStore,
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
@@ -47,6 +48,9 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const { version } = await fetchLatestBaileysVersion();
 
+  // Setup store
+  const store = makeInMemoryStore({ logger: pino({ level: "silent" }) });
+
   const sock = makeWASocket({
     version,
     auth: state,
@@ -55,9 +59,11 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     printQRInTerminal: false,
   });
 
-  instances[waId] = { sock, status: "connecting", jid: null };
+  // Bind store ke socket
+  store.bind(sock.ev);
 
-  // Set presence function ke queue
+  instances[waId] = { sock, store, status: "connecting", jid: null };
+
   queue.setPresenceFunction(setPresence);
   queue.setSendFunction(kirimPesan);
 
@@ -77,7 +83,9 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
       instances[waId].jid = jid;
       logger.info("WA-Manager", `${waId} terhubung sebagai ${jid}`);
       if (onConnected) await onConnected(waId, jid);
-      setTimeout(() => scanUnread(waId), 5000);
+
+      // Scan unread setelah store siap
+      setTimeout(() => scanUnread(waId), 8000);
     }
 
     if (connection === "close") {
@@ -141,7 +149,6 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
             msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
             "[Pesan tidak dikenali]";
-
           if (onMessage) await onMessage(waId, jid, pushName, pesan);
         }
       } catch (err) {
@@ -155,24 +162,25 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
 
 async function scanUnread(waId) {
   try {
-    const sock = instances[waId]?.sock;
-    if (!sock) return;
-    const store = sock.store || null;
+    const store = instances[waId]?.store;
     if (!store) return;
 
     const unreadChats = [];
-    for (const [jid, chat] of Object.entries(store.chats.all() || {})) {
-      if (jid.endsWith("@g.us")) continue;
-      if (chat.unreadCount > 0) {
+    const semuaChat = store.chats.all();
+
+    for (const chat of semuaChat) {
+      if (!chat.id || chat.id.endsWith("@g.us")) continue;
+      if ((chat.unreadCount || 0) > 0) {
         unreadChats.push({
-          jid,
+          jid: chat.id,
           unreadCount: chat.unreadCount,
-          name: chat.name || jid.replace(/@.*/, ""),
+          name: chat.name || chat.id.replace(/@.*/, ""),
         });
       }
     }
 
     if (unreadChats.length > 0 && onUnreadFound) {
+      logger.info("WA-Manager", `${waId}: ditemukan ${unreadChats.length} chat unread`);
       await onUnreadFound(waId, unreadChats);
     }
   } catch (err) {
@@ -183,10 +191,35 @@ async function scanUnread(waId) {
 async function kirimPesan(waId, jid, pesan, media = null) {
   const sock = instances[waId]?.sock;
   if (!sock) throw new Error(`${waId} tidak terhubung`);
+
+  // Cek apakah nomor aktif di WA
+  if (!media) {
+    try {
+      const [result] = await sock.onWhatsApp(jid.replace("@s.whatsapp.net", ""));
+      if (!result?.exists) {
+        throw new Error(`NOMOR_TIDAK_AKTIF`);
+      }
+    } catch (err) {
+      if (err.message === "NOMOR_TIDAK_AKTIF") throw err;
+      // Kalau gagal cek, tetap lanjut kirim
+    }
+  }
+
   if (media) {
     await sock.sendMessage(jid, media);
   } else {
     await sock.sendMessage(jid, { text: pesan });
+  }
+}
+
+async function cekNomorAktif(waId, jid) {
+  const sock = instances[waId]?.sock;
+  if (!sock) return false;
+  try {
+    const [result] = await sock.onWhatsApp(jid.replace("@s.whatsapp.net", ""));
+    return result?.exists || false;
+  } catch (err) {
+    return false;
   }
 }
 
@@ -220,6 +253,7 @@ module.exports = {
   connectWA,
   disconnectWA,
   kirimPesan,
+  cekNomorAktif,
   setPresence,
   getStatus,
   getInstance,

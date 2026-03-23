@@ -189,20 +189,33 @@ function setupCallbacks() {
       logger.info("Bot-Bridge", `Media masuk [${id}] dari ${nama} via ${waId}`);
     },
 
-    onUnreadFound: async (waId, unreadChats) => {
-      pendingUnread[waId] = unreadChats;
-      const total = unreadChats.reduce((sum, c) => sum + c.unreadCount, 0);
-      const daftar = unreadChats
-        .map((c, i) => `${i + 1}. ${c.name} — ${c.unreadCount} pesan`)
-        .join("\n");
+onUnreadFound: async (waId, unreadChats) => {
+  const total = unreadChats.reduce((sum, c) => sum + c.unreadCount, 0);
+  logger.info("Bot-Bridge", `${waId}: meneruskan ${unreadChats.length} unread otomatis`);
 
-      await kirimTeks(
-        `<b>${waId} terhubung!</b>\n\n` +
-        `Ada <b>${total} pesan belum dibaca</b> dari ${unreadChats.length} chat:\n\n` +
-        `${daftar}\n\n` +
-        `Ketik /teruskanunread ${waId} untuk meneruskan, atau abaikan.`
-      );
-    },
+  await kirimTeks(
+    `<b>${waId} terhubung!</b>\n\n` +
+    `Meneruskan <b>${total} pesan belum dibaca</b> dari ${unreadChats.length} chat...`
+  );
+
+  for (const chat of unreadChats) {
+    const id = getOrCreateId(waId, chat.jid, chat.name);
+    chatLog[id].status = "perlu_dibalas";
+    saveChatLog();
+
+    await kirimTeks(
+      `<b>[${id}] Unread - ${waId}</b>\n` +
+      `👤 <b>${chat.name}</b>\n` +
+      `📞 <b>${chat.jid.replace(/@.*/, "")}</b>\n` +
+      `📨 ${chat.unreadCount} pesan belum dibaca\n\n` +
+      `<i>Balas: /${id} pesanmu</i>`
+    );
+
+    // Jeda 3-5 detik antar pesan agar tidak flooding
+    const jeda = Math.floor(Math.random() * 2000) + 3000;
+    await new Promise((r) => setTimeout(r, jeda));
+  }
+},
   });
 }
 
@@ -264,10 +277,24 @@ async function prosesPerintah(msg) {
         pesanWA = { document: buffer, fileName, caption: pesanTeks || "" };
       }
 
-      queue.tambahKeAntrian(chat.waId, chat.jid, pesanTeks, pesanWA, chat.panjangPesan || 0);
-      chatLog[id].status = "menunggu";
-      saveChatLog();
-      await kirimTeks(`✅ Media ke <b>${chat.nama}</b> [${id}] masuk antrian.`);
+// Cek nomor aktif dulu
+const aktif = await waManager.cekNomorAktif(chat.waId, chat.jid);
+if (!aktif) {
+  chatLog[id].status = "tidak_aktif";
+  saveChatLog();
+  await kirimTeks(
+    `❌ <b>[${id}] ${chat.nama}</b>\n` +
+    `📞 ${chat.jid.replace(/@.*/, "")}\n\n` +
+    `Nomor tidak terdaftar di WhatsApp.\n` +
+    `Status ditandai tidak aktif.`
+  );
+  return;
+}
+
+queue.tambahKeAntrian(chat.waId, chat.jid, pesan, null, chat.panjangPesan || 0);
+chatLog[id].status = "menunggu";
+saveChatLog();
+await kirimTeks(`✅ Pesan ke <b>${chat.nama}</b> [${id}] masuk antrian.`);
     } catch (err) {
       await kirimTeks(`❌ Gagal proses media: ${err.message}`);
     }
