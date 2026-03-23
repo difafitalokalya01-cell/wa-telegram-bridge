@@ -192,4 +192,3 @@ async function prosesPerintah(msg) {
   }
 }
 
-module.exports = { setupCallbacks, prosesPerintah, kirimTeks, kirimError };
