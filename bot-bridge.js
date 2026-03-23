@@ -108,7 +108,7 @@ function setupCallbacks() {
     onMessage: async (waId, jid, nama, pesan) => {
       chatCounter++;
       const id = chatCounter;
-      chatLog[id] = { waId, jid, nama, waktu: Date.now() };
+      chatLog[id] = { waId, jid, nama, waktu: Date.now(), panjangPesan: pesan.length };
       saveChatLog();
 
       await kirimTeks(
@@ -124,7 +124,7 @@ function setupCallbacks() {
     onMedia: async (waId, jid, nama, buffer, ext, mediaType, caption) => {
       chatCounter++;
       const id = chatCounter;
-      chatLog[id] = { waId, jid, nama, waktu: Date.now() };
+      chatLog[id] = { waId, jid, nama, waktu: Date.now(), panjangPesan: caption.length };
       saveChatLog();
 
       const info =
@@ -249,7 +249,7 @@ async function prosesPerintah(msg) {
       return;
     }
 
-    queue.tambahKeAntrian(chat.waId, chat.jid, pesan);
+    queue.tambahKeAntrian(chat.waId, chat.jid, pesan, null, pesan.length);
     await kirimTeks(`✅ Pesan ke <b>${chat.nama}</b> (#${id}) masuk antrian.`);
     logger.info("Bot-Bridge", `Balas #${id} ke ${chat.nama} masuk antrian`);
   }

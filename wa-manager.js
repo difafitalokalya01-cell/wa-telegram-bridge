@@ -34,6 +34,12 @@ function setCallbacks(callbacks) {
   if (callbacks.onUnreadFound) onUnreadFound = callbacks.onUnreadFound;
 }
 
+async function setPresence(waId, jid, status) {
+  const sock = instances[waId]?.sock;
+  if (!sock) return;
+  await sock.sendPresenceUpdate(status, jid);
+}
+
 async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   const authPath = path.join(AUTH_DIR, waId);
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
@@ -50,6 +56,10 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   });
 
   instances[waId] = { sock, status: "connecting", jid: null };
+
+  // Set presence function ke queue
+  queue.setPresenceFunction(setPresence);
+  queue.setSendFunction(kirimPesan);
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -86,10 +96,8 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     }
   });
 
-  // Pairing dengan nomor ponsel
   if (usePairingCode && nomorPonsel && !sock.authState.creds.registered) {
     try {
-      // Tunggu sebentar agar socket siap
       await new Promise((r) => setTimeout(r, 3000));
       const code = await sock.requestPairingCode(nomorPonsel);
       logger.info("WA-Manager", `Pairing code untuk ${waId}: ${code}`);
@@ -133,6 +141,7 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
             msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
             "[Pesan tidak dikenali]";
+
           if (onMessage) await onMessage(waId, jid, pushName, pesan);
         }
       } catch (err) {
@@ -141,7 +150,6 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     }
   });
 
-  queue.setSendFunction(kirimPesan);
   return sock;
 }
 
@@ -212,6 +220,7 @@ module.exports = {
   connectWA,
   disconnectWA,
   kirimPesan,
+  setPresence,
   getStatus,
   getInstance,
   getAllIds,
