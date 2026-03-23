@@ -90,7 +90,7 @@ async function kirimDokumen(buffer, filename, caption = "") {
   }
 }
 
-// ===== KIRIM ERROR KE ADMIN =====
+// ===== KIRIM ERROR =====
 async function kirimError(pesan) {
   try {
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -99,7 +99,7 @@ async function kirimError(pesan) {
       parse_mode: "HTML",
     });
   } catch (err) {
-    logger.error("Bot-Bridge", `Gagal kirim error notif: ${err.message}`);
+    logger.error("Bot-Bridge", `Gagal kirim error: ${err.message}`);
   }
 }
 
@@ -117,7 +117,7 @@ function setupCallbacks() {
         `👤 <b>${nama}</b>\n` +
         `📞 <code>${jid.replace(/@.*/, "")}</code>\n\n` +
         `💬 ${pesan}\n\n` +
-        `<i>Balas: /balas #${id} pesanmu</i>`;
+        `<i>Balas: /#${id} pesanmu</i>`;
 
       await kirimTeks(teks);
       logger.info("Bot-Bridge", `Pesan masuk #${id} dari ${nama} via ${waId}`);
@@ -134,7 +134,7 @@ function setupCallbacks() {
         `👤 ${nama}\n` +
         `📞 ${jid.replace(/@.*/, "")}\n` +
         (caption ? `💬 ${caption}\n` : "") +
-        `\nBalas: /balas #${id} pesanmu`;
+        `\nBalas: /#${id} pesanmu`;
 
       if (mediaType === "imageMessage") {
         await kirimFoto(buffer, info);
@@ -171,13 +171,34 @@ async function prosesPerintah(msg) {
 
   if (fromId !== String(ADMIN_ID)) return;
 
-  // /balas #id pesan
-  if (teks.startsWith("/balas ")) {
+  // Format baru: /#1 pesanmu
+  if (teks.match(/^\/#\d+/)) {
+    const spasi = teks.indexOf(" ");
+    if (spasi === -1) {
+      await kirimTeks("❌ Format: /#id pesanmu");
+      return;
+    }
+    const id = parseInt(teks.slice(2, spasi));
+    const pesan = teks.slice(spasi + 1).trim();
+    const chat = chatLog[id];
+
+    if (!chat) {
+      await kirimTeks(`❌ Chat #${id} tidak ditemukan.`);
+      return;
+    }
+
+    queue.tambahKeAntrian(chat.waId, chat.jid, pesan);
+    await kirimTeks(`✅ Pesan ke <b>${chat.nama}</b> (#${id}) masuk antrian.`);
+    logger.info("Bot-Bridge", `Balas #${id} ke ${chat.nama} masuk antrian`);
+  }
+
+  // Format lama: /balas #1 pesanmu (tetap support)
+  else if (teks.startsWith("/balas ")) {
     const baris = teks.indexOf(" #");
     const sisa = teks.slice(baris + 1);
     const spasi = sisa.indexOf(" ");
     if (baris === -1 || spasi === -1) {
-      await kirimTeks("❌ Format: /balas #id pesanmu");
+      await kirimTeks("❌ Format: /#id pesanmu");
       return;
     }
     const id = parseInt(sisa.slice(1, spasi));
@@ -236,7 +257,7 @@ async function prosesPerintah(msg) {
         `👤 <b>${chat.name}</b>\n` +
         `📞 <code>${chat.jid.replace(/@.*/, "")}</code>\n` +
         `📨 ${chat.unreadCount} pesan belum dibaca\n\n` +
-        `<i>Balas: /balas #${id} pesanmu</i>`
+        `<i>Balas: /#${id} pesanmu</i>`
       );
     }
 
@@ -264,10 +285,10 @@ async function prosesPerintah(msg) {
       `ℹ️ <b>Status WA Bridge</b>\n\n` +
       `${daftar}\n\n` +
       `<b>Perintah:</b>\n` +
-      `/balas #id pesan\n` +
-      `/ke nomor pesan\n` +
-      `/antrian\n` +
-      `/status`
+      `/#id pesan - Balas ke chat tertentu\n` +
+      `/ke nomor pesan - Kirim ke nomor baru\n` +
+      `/antrian - Cek status antrian\n` +
+      `/status - Cek status WA`
     );
   }
 
@@ -276,7 +297,7 @@ async function prosesPerintah(msg) {
     await kirimTeks(
       `👋 <b>WA Bridge Bot aktif!</b>\n\n` +
       `<b>Perintah:</b>\n` +
-      `/balas #id pesan - Balas ke chat tertentu\n` +
+      `/#id pesan - Balas ke chat tertentu\n` +
       `/ke nomor pesan - Kirim ke nomor baru\n` +
       `/antrian - Cek status antrian\n` +
       `/status - Cek status WA`
