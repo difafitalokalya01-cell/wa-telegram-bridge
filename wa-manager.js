@@ -14,11 +14,10 @@ const queue = require("./queue");
 const AUTH_DIR = "./auth_sessions";
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR);
 
-// Simpan semua instance WA yang aktif
 const instances = {};
 
-// Callback yang akan diisi oleh bot-bridge, bot-wa, dll
 let onQR = null;
+let onPairingCode = null;
 let onConnected = null;
 let onDisconnected = null;
 let onMessage = null;
@@ -27,6 +26,7 @@ let onUnreadFound = null;
 
 function setCallbacks(callbacks) {
   if (callbacks.onQR) onQR = callbacks.onQR;
+  if (callbacks.onPairingCode) onPairingCode = callbacks.onPairingCode;
   if (callbacks.onConnected) onConnected = callbacks.onConnected;
   if (callbacks.onDisconnected) onDisconnected = callbacks.onDisconnected;
   if (callbacks.onMessage) onMessage = callbacks.onMessage;
@@ -34,7 +34,7 @@ function setCallbacks(callbacks) {
   if (callbacks.onUnreadFound) onUnreadFound = callbacks.onUnreadFound;
 }
 
-async function connectWA(waId) {
+async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   const authPath = path.join(AUTH_DIR, waId);
   if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
 
@@ -46,6 +46,7 @@ async function connectWA(waId) {
     auth: state,
     logger: pino({ level: "silent" }),
     browser: [`WA-Bridge-${waId}`, "Chrome", "1.0.0"],
+    printQRInTerminal: false,
   });
 
   instances[waId] = { sock, status: "connecting", jid: null };
@@ -55,7 +56,7 @@ async function connectWA(waId) {
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    if (qr && !usePairingCode) {
       logger.info("WA-Manager", `QR diterima untuk ${waId}`);
       if (onQR) await onQR(waId, qr);
     }
@@ -66,8 +67,6 @@ async function connectWA(waId) {
       instances[waId].jid = jid;
       logger.info("WA-Manager", `${waId} terhubung sebagai ${jid}`);
       if (onConnected) await onConnected(waId, jid);
-
-      // Scan unread chat setelah terhubung
       setTimeout(() => scanUnread(waId), 5000);
     }
 
@@ -87,6 +86,20 @@ async function connectWA(waId) {
     }
   });
 
+  // Pairing dengan nomor ponsel
+  if (usePairingCode && nomorPonsel && !sock.authState.creds.registered) {
+    try {
+      // Tunggu sebentar agar socket siap
+      await new Promise((r) => setTimeout(r, 3000));
+      const code = await sock.requestPairingCode(nomorPonsel);
+      logger.info("WA-Manager", `Pairing code untuk ${waId}: ${code}`);
+      if (onPairingCode) await onPairingCode(waId, code, nomorPonsel);
+    } catch (err) {
+      logger.error("WA-Manager", `Gagal request pairing code ${waId}: ${err.message}`);
+      if (onPairingCode) await onPairingCode(waId, null, nomorPonsel, err.message);
+    }
+  }
+
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
@@ -98,12 +111,10 @@ async function connectWA(waId) {
         const jid = msg.key.remoteJid;
         const pushName = msg.pushName || jid.replace(/@.*/, "");
 
-        // Cek apakah pesan mengandung media
         const mediaTypes = ["imageMessage", "videoMessage", "documentMessage", "audioMessage"];
         const mediaType = mediaTypes.find((t) => msg.message?.[t]);
 
         if (mediaType) {
-          // Proses media
           try {
             const buffer = await downloadMediaMessage(msg, "buffer", {});
             const ext = {
@@ -112,25 +123,17 @@ async function connectWA(waId) {
               documentMessage: msg.message.documentMessage?.fileName?.split(".").pop() || "bin",
               audioMessage: "ogg",
             }[mediaType];
-
             const caption = msg.message[mediaType]?.caption || "";
-
-            if (onMedia) {
-              await onMedia(waId, jid, pushName, buffer, ext, mediaType, caption);
-            }
+            if (onMedia) await onMedia(waId, jid, pushName, buffer, ext, mediaType, caption);
           } catch (err) {
             logger.error("WA-Manager", `Gagal download media dari ${jid}: ${err.message}`);
           }
         } else {
-          // Proses teks biasa
           const pesan =
             msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
             "[Pesan tidak dikenali]";
-
-          if (onMessage) {
-            await onMessage(waId, jid, pushName, pesan);
-          }
+          if (onMessage) await onMessage(waId, jid, pushName, pesan);
         }
       } catch (err) {
         logger.error("WA-Manager", `Error proses pesan: ${err.message}`);
@@ -138,9 +141,7 @@ async function connectWA(waId) {
     }
   });
 
-  // Set fungsi kirim ke queue
   queue.setSendFunction(kirimPesan);
-
   return sock;
 }
 
@@ -148,11 +149,6 @@ async function scanUnread(waId) {
   try {
     const sock = instances[waId]?.sock;
     if (!sock) return;
-
-    // Ambil semua chat
-    const chats = await sock.groupFetchAllParticipating();
-    // Filter private chat unread (bukan grup)
-    // Baileys menyimpan unread count di store, kita ambil dari chat store
     const store = sock.store || null;
     if (!store) return;
 
@@ -160,7 +156,11 @@ async function scanUnread(waId) {
     for (const [jid, chat] of Object.entries(store.chats.all() || {})) {
       if (jid.endsWith("@g.us")) continue;
       if (chat.unreadCount > 0) {
-        unreadChats.push({ jid, unreadCount: chat.unreadCount, name: chat.name || jid.replace(/@.*/, "") });
+        unreadChats.push({
+          jid,
+          unreadCount: chat.unreadCount,
+          name: chat.name || jid.replace(/@.*/, ""),
+        });
       }
     }
 
@@ -168,62 +168,4 @@ async function scanUnread(waId) {
       await onUnreadFound(waId, unreadChats);
     }
   } catch (err) {
-    logger.error("WA-Manager", `Gagal scan unread ${waId}: ${err.message}`);
-  }
-}
-
-async function kirimPesan(waId, jid, pesan, media = null) {
-  const sock = instances[waId]?.sock;
-  if (!sock) throw new Error(`${waId} tidak terhubung`);
-
-  if (media) {
-    await sock.sendMessage(jid, media);
-  } else {
-    await sock.sendMessage(jid, { text: pesan });
-  }
-}
-
-async function disconnectWA(waId) {
-  const sock = instances[waId]?.sock;
-  if (!sock) throw new Error(`${waId} tidak ditemukan`);
-
-  await sock.logout();
-  delete instances[waId];
-
-  // Hapus session
-  const authPath = path.join(AUTH_DIR, waId);
-  if (fs.existsSync(authPath)) {
-    fs.rmSync(authPath, { recursive: true });
-  }
-
-  logger.info("WA-Manager", `${waId} berhasil dihapus`);
-}
-
-function getStatus() {
-  const result = {};
-  for (const [waId, instance] of Object.entries(instances)) {
-    result[waId] = {
-      status: instance.status,
-      jid: instance.jid,
-    };
-  }
-  return result;
-}
-
-function getInstance(waId) {
-  return instances[waId] || null;
-}
-
-function getAllIds() {
-  return Object.keys(instances);
-}
-
-module.exports = {
-  connectWA,
-  disconnectWA,
-  kirimPesan,
-  getStatus,
-  getInstance,
-  getAllIds,
-  setCallbacks,
-};
+    logger.err
