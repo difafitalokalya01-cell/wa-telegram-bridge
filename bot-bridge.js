@@ -12,7 +12,7 @@ const CHAT_ID = config.telegramChatId;
 const ADMIN_ID = config.adminTelegramId;
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
-const CHATLOG_FILE = "./chatlog.json";
+const CHATLOG_FILE = "./auth_sessions/chatlog.json";
 
 // ===== LOAD & SAVE CHATLOG =====
 function loadChatLog() {
