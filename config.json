@@ -3,6 +3,7 @@
   "botBridgeToken": "8458582546:AAEajr73kZF8iISDDRnRxc2yNfgwBHeFeoI",
   "botWaToken": "8624849307:AAGXxJ4eOLLL3DYQJXQcpQSYOfuJI5GArho",
   "botConfigToken": "8340988071:AAEaAMarL5IbkCnWYatBo0NF1rcjQ6Rr9bE",
+  "botReminderToken": "8535561262:AAG4KCnOfCn55yMOgGgpB3wIL9x2xzHzquw",
   "telegramChatId": "5846121015",
   "waAccounts": {},
   "blacklist": [],
@@ -10,7 +11,19 @@
     "typingSpeed": "normal",
     "randomDelay": true,
     "minDelay": 3,
-    "maxDelay": 10
+    "maxDelay": 10,
+    "thinkDelayMin": 30,
+    "thinkDelayMax": 600,
+    "switchChatDelayMin": 120,
+    "switchChatDelayMax": 480,
+    "readDelayShort": { "min": 30, "max": 60 },
+    "readDelayMedium": { "min": 60, "max": 180 },
+    "readDelayLong": { "min": 180, "max": 420 }
   },
-  "activeAccounts": {}
+  "activeAccounts": {},
+  "reminderSettings": {
+    "reminder1": 30,
+    "reminder2": 60,
+    "reminder3": 120
+  }
 }
