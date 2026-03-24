@@ -340,7 +340,7 @@ async function prosesPerintah(msg) {
 
 // ===== BALAS: /A pesanmu =====
 // Pastikan bukan perintah khusus
-const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "teruskanunread"];
+const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "teruskanunread", "fixjid"];
 const idBalas = teks.match(/^\/([A-Za-z]+)\s+/)?.[1]?.toLowerCase();
 
 if (idBalas && !perintahKhusus.includes(idBalas) && teks.match(/^\/[A-Za-z]+\s+/)) {
