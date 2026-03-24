@@ -615,6 +615,42 @@ if (idBalas && !perintahKhusus.includes(idBalas) && teks.match(/^\/[A-Za-z]+\s+/
     await kirimTeks(`✅ Catatan untuk <b>[${id}] ${chat.nama}</b> disimpan.`);
   }
 
+// /fixjid A 628xxx
+  else if (teks.startsWith("/fixjid ")) {
+    const bagian = teks.replace("/fixjid ", "").trim().split(" ");
+    if (bagian.length !== 2) {
+      await kirimTeks("❌ Format: /fixjid [id] [nomor]\nContoh: /fixjid H 6287877164531");
+      return;
+    }
+
+    const id = bagian[0].toUpperCase();
+    const nomorBaru = bagian[1].trim().replace(/[^0-9]/g, "");
+    const chat = chatLog[id];
+
+    if (!chat) {
+      await kirimTeks(`❌ Chat [${id}] tidak ditemukan.`);
+      return;
+    }
+
+    const jidLama = chat.jid;
+    const jidBaru = `${nomorBaru}@s.whatsapp.net`;
+
+    const keyLama = `${chat.waId}:${jidLama}`;
+    const keyBaru = `${chat.waId}:${jidBaru}`;
+    delete jidToId[keyLama];
+    jidToId[keyBaru] = id;
+
+    chatLog[id].jid = jidBaru;
+    saveChatLog();
+
+    await kirimTeks(
+      `✅ JID [${id}] ${chat.nama} diperbaiki!\n\n` +
+      `Lama: <code>${jidLama.replace(/@.*/, "")}</code>\n` +
+      `Baru: <code>${nomorBaru}</code>`
+    );
+    logger.info("Bot-Bridge", `Fix JID [${id}]: ${jidLama} → ${jidBaru}`);
+  }
+
   // /selesai A
   else if (teks.startsWith("/selesai ")) {
     const id = teks.replace("/selesai ", "").trim().toUpperCase();
