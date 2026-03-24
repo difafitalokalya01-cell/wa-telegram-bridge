@@ -202,8 +202,12 @@ function setupCallbacks() {
       tambahRiwayat(id, nama, pesan);
       saveChatLog();
 
+      // Ambil nomor HR penerima
+      const nomorHR = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
+
       await kirimTeks(
         `<b>[${id}] ${waId}</b>\n` +
+        `📱 Diterima: <code>${nomorHR}</code>\n` +
         `👤 <b>${nama}</b>\n` +
         `📞 <b>${jid.replace(/@.*/, "")}</b>\n\n` +
         `💬 ${pesan}\n\n` +
