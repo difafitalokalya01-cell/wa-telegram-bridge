@@ -128,7 +128,9 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         if (msg.key.fromMe) continue;
         if (msg.key.remoteJid.endsWith("@g.us")) continue;
 
-        const jid = msg.key.remoteJid;
+// Normalisasi JID — ambil nomor bersih saja
+const jidBersih = jid.includes(":") ? jid.split(":")[0] + "@s.whatsapp.net" : jid;
+const jid2 = jidBersih;
         const pushName = msg.pushName || jid.replace(/@.*/, "");
 
         // ===== AUTO READ =====

@@ -338,8 +338,12 @@ async function prosesPerintah(msg) {
     return;
   }
 
-  // ===== BALAS: /A pesanmu =====
-  if (teks.match(/^\/[A-Za-z]+\s+/)) {
+// ===== BALAS: /A pesanmu =====
+// Pastikan bukan perintah khusus
+const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "teruskanunread"];
+const idBalas = teks.match(/^\/([A-Za-z]+)\s+/)?.[1]?.toLowerCase();
+
+if (idBalas && !perintahKhusus.includes(idBalas) && teks.match(/^\/[A-Za-z]+\s+/)) {
     const spasi = teks.indexOf(" ");
     const id = teks.slice(1, spasi).toUpperCase();
     const pesan = teks.slice(spasi + 1).trim();
