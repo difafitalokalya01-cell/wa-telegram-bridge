@@ -4,7 +4,6 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
-  makeInMemoryStore,
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const fs = require("fs");
@@ -38,7 +37,11 @@ function setCallbacks(callbacks) {
 async function setPresence(waId, jid, status) {
   const sock = instances[waId]?.sock;
   if (!sock) return;
-  await sock.sendPresenceUpdate(status, jid);
+  try {
+    await sock.sendPresenceUpdate(status, jid);
+  } catch (e) {
+    logger.error("WA-Manager", `Gagal set presence: ${e.message}`);
+  }
 }
 
 async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
@@ -48,9 +51,6 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const { version } = await fetchLatestBaileysVersion();
 
-  // Setup store
-  const store = makeInMemoryStore({ logger: pino({ level: "silent" }) });
-
   const sock = makeWASocket({
     version,
     auth: state,
@@ -59,10 +59,7 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     printQRInTerminal: false,
   });
 
-  // Bind store ke socket
-  store.bind(sock.ev);
-
-  instances[waId] = { sock, store, status: "connecting", jid: null };
+  instances[waId] = { sock, status: "connecting", jid: null };
 
   queue.setPresenceFunction(setPresence);
   queue.setSendFunction(kirimPesan);
@@ -83,9 +80,6 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
       instances[waId].jid = jid;
       logger.info("WA-Manager", `${waId} terhubung sebagai ${jid}`);
       if (onConnected) await onConnected(waId, jid);
-
-      // Scan unread setelah store siap
-      setTimeout(() => scanUnread(waId), 8000);
     }
 
     if (connection === "close") {
@@ -104,17 +98,27 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     }
   });
 
-  if (usePairingCode && nomorPonsel && !sock.authState.creds.registered) {
+  // ===== HANDLE HISTORY SYNC (unread saat reconnect) =====
+  sock.ev.on("messaging-history.set", async ({ chats, isLatest }) => {
+    if (!isLatest) return;
+
     try {
-      await new Promise((r) => setTimeout(r, 3000));
-      const code = await sock.requestPairingCode(nomorPonsel);
-      logger.info("WA-Manager", `Pairing code untuk ${waId}: ${code}`);
-      if (onPairingCode) await onPairingCode(waId, code, nomorPonsel);
+      const unreadChats = chats.filter(
+        (c) => c.unreadCount > 0 && !c.id.endsWith("@g.us")
+      );
+
+      if (unreadChats.length > 0 && onUnreadFound) {
+        logger.info("WA-Manager", `${waId}: ${unreadChats.length} unread dari history sync`);
+        await onUnreadFound(waId, unreadChats.map((c) => ({
+          jid: c.id,
+          unreadCount: c.unreadCount,
+          name: c.name || c.id.replace(/@.*/, ""),
+        })));
+      }
     } catch (err) {
-      logger.error("WA-Manager", `Gagal request pairing code ${waId}: ${err.message}`);
-      if (onPairingCode) await onPairingCode(waId, null, nomorPonsel, err.message);
+      logger.error("WA-Manager", `Gagal proses history sync: ${err.message}`);
     }
-  }
+  });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
@@ -126,6 +130,14 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
 
         const jid = msg.key.remoteJid;
         const pushName = msg.pushName || jid.replace(/@.*/, "");
+
+        // ===== AUTO READ =====
+        try {
+          await sock.readMessages([msg.key]);
+          logger.info("WA-Manager", `Auto read pesan dari ${jid}`);
+        } catch (e) {
+          logger.error("WA-Manager", `Gagal auto read: ${e.message}`);
+        }
 
         const mediaTypes = ["imageMessage", "videoMessage", "documentMessage", "audioMessage"];
         const mediaType = mediaTypes.find((t) => msg.message?.[t]);
@@ -157,51 +169,31 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     }
   });
 
-  return sock;
-}
-
-async function scanUnread(waId) {
-  try {
-    const store = instances[waId]?.store;
-    if (!store) return;
-
-    const unreadChats = [];
-    const semuaChat = store.chats.all();
-
-    for (const chat of semuaChat) {
-      if (!chat.id || chat.id.endsWith("@g.us")) continue;
-      if ((chat.unreadCount || 0) > 0) {
-        unreadChats.push({
-          jid: chat.id,
-          unreadCount: chat.unreadCount,
-          name: chat.name || chat.id.replace(/@.*/, ""),
-        });
-      }
+  if (usePairingCode && nomorPonsel && !sock.authState.creds.registered) {
+    try {
+      await new Promise((r) => setTimeout(r, 3000));
+      const code = await sock.requestPairingCode(nomorPonsel);
+      logger.info("WA-Manager", `Pairing code untuk ${waId}: ${code}`);
+      if (onPairingCode) await onPairingCode(waId, code, nomorPonsel);
+    } catch (err) {
+      logger.error("WA-Manager", `Gagal request pairing code ${waId}: ${err.message}`);
+      if (onPairingCode) await onPairingCode(waId, null, nomorPonsel, err.message);
     }
-
-    if (unreadChats.length > 0 && onUnreadFound) {
-      logger.info("WA-Manager", `${waId}: ditemukan ${unreadChats.length} chat unread`);
-      await onUnreadFound(waId, unreadChats);
-    }
-  } catch (err) {
-    logger.error("WA-Manager", `Gagal scan unread ${waId}: ${err.message}`);
   }
+
+  return sock;
 }
 
 async function kirimPesan(waId, jid, pesan, media = null) {
   const sock = instances[waId]?.sock;
   if (!sock) throw new Error(`${waId} tidak terhubung`);
 
-  // Cek apakah nomor aktif di WA
   if (!media) {
     try {
       const [result] = await sock.onWhatsApp(jid.replace("@s.whatsapp.net", ""));
-      if (!result?.exists) {
-        throw new Error(`NOMOR_TIDAK_AKTIF`);
-      }
+      if (!result?.exists) throw new Error(`NOMOR_TIDAK_AKTIF`);
     } catch (err) {
       if (err.message === "NOMOR_TIDAK_AKTIF") throw err;
-      // Kalau gagal cek, tetap lanjut kirim
     }
   }
 
