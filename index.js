@@ -7,20 +7,20 @@ const queue = require("./queue");
 const botBridge = require("./bot-bridge");
 const botWa = require("./bot-wa");
 const botConfig = require("./bot-config");
+const botReminder = require("./bot-reminder");
 
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
 
-// ===== CONFIG MANAGEMENT =====
-// config.json dari GitHub = token & settings (tidak berubah)
-// auth_sessions/data.json = waAccounts & activeAccounts (persistent di volume)
+const app = express();
+app.use(express.json());
 
+// ===== CONFIG MANAGEMENT =====
 const CONFIG_FILE = "./config.json";
 const DATA_FILE = "./auth_sessions/data.json";
 
 function loadConfig() {
   const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
-  // Load waAccounts & activeAccounts dari volume kalau ada
   if (fs.existsSync(DATA_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
@@ -28,6 +28,7 @@ function loadConfig() {
       config.activeAccounts = data.activeAccounts || {};
       config.blacklist = data.blacklist || config.blacklist || [];
       config.queueSettings = data.queueSettings || config.queueSettings;
+      config.reminderSettings = data.reminderSettings || config.reminderSettings;
     } catch (e) {
       logger.error("Index", `Gagal load data.json: ${e.message}`);
     }
@@ -42,6 +43,7 @@ function saveData(config) {
       activeAccounts: config.activeAccounts || {},
       blacklist: config.blacklist || [],
       queueSettings: config.queueSettings,
+      reminderSettings: config.reminderSettings,
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
@@ -49,19 +51,19 @@ function saveData(config) {
   }
 }
 
-// Export fungsi saveData agar bisa dipakai bot-wa dan bot-config
 global.loadConfig = loadConfig;
 global.saveData = saveData;
 
 const config = loadConfig();
 
-const app = express();
+const app2 = express();
 app.use(express.json());
 
 botBridge.setupCallbacks();
 botWa.setupQRCallback();
 queue.updateSettings(config.queueSettings);
 
+// ===== WEBHOOK BOT BRIDGE =====
 app.post("/webhook/bridge", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -72,6 +74,7 @@ app.post("/webhook/bridge", async (req, res) => {
   }
 });
 
+// ===== WEBHOOK BOT WA =====
 app.post("/webhook/wa", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -82,6 +85,7 @@ app.post("/webhook/wa", async (req, res) => {
   }
 });
 
+// ===== WEBHOOK BOT CONFIG =====
 app.post("/webhook/config", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -92,6 +96,18 @@ app.post("/webhook/config", async (req, res) => {
   }
 });
 
+// ===== WEBHOOK BOT REMINDER =====
+app.post("/webhook/reminder", async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const msg = req.body?.message;
+    if (msg) await botReminder.prosesPerintah(msg);
+  } catch (err) {
+    logger.error("Index", `Error webhook reminder: ${err.message}`);
+  }
+});
+
+// ===== HEALTH CHECK =====
 app.get("/health", (req, res) => {
   const waStatus = waManager.getStatus();
   const qStatus = queue.getStatus();
@@ -123,7 +139,9 @@ app.listen(PORT, async () => {
       { token: config.botBridgeToken, path: "bridge" },
       { token: config.botWaToken, path: "wa" },
       { token: config.botConfigToken, path: "config" },
+      { token: config.botReminderToken, path: "reminder" },
     ];
+
     for (const bot of bots) {
       try {
         await axios.post(
@@ -137,7 +155,7 @@ app.listen(PORT, async () => {
     }
   }
 
-  // Reconnect semua WA dari data.json di volume
+  // Reconnect semua WA
   const accounts = config.waAccounts || {};
   for (const waId of Object.keys(accounts)) {
     if (config.activeAccounts[waId] === false) continue;
@@ -148,4 +166,7 @@ app.listen(PORT, async () => {
       logger.error("Index", `Gagal reconnect ${waId}: ${err.message}`);
     }
   }
+
+  // Mulai sistem pengingat
+  botReminder.mulaiPengingat();
 });
