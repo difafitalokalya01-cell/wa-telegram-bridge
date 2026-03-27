@@ -59,15 +59,20 @@ function setupQRCallback() {
       );
     },
     onConnected: async (waId, jid) => {
+      const slot = store.getSlotByWaId(waId);
       await kirimTeks(
         `<b>${waId} terhubung!</b>\n` +
-        `Nomor: <code>${jid.replace(/@.*/, "")}</code>`
+        `Nomor: <code>${jid.replace(/@.*/, "")}</code>\n` +
+        `Slot: ${slot ? `${slot.nama} (${slot.username})` : "Belum di-assign ke slot"}`
       );
     },
     onDisconnected: async (waId, willReconnect, maxRetryReached = false) => {
-      if (maxRetryReached) return; // sudah dihandle di bot-bridge
+      if (maxRetryReached) return;
+      const slot = store.getSlotByWaId(waId);
       await kirimTeks(
         `<b>${waId} terputus!</b>\n` +
+        `Nomor: ${waId}\n` +
+        `Slot: ${slot ? `${slot.nama} (${slot.username})` : "Belum di-assign"}\n` +
         `Reconnect otomatis: ${willReconnect ? "Ya" : "Tidak"}`
       );
     },
