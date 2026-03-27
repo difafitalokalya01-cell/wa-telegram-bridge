@@ -2,7 +2,7 @@
   "adminTelegramId": "5846121015",
   "telegramChatId": "5846121015",
 
-  "botGlobalToken": "GANTI_TOKEN_WAGLOBALPANEL_BOT",
+  "botGlobalToken": "8664991428:AAEffl1EO2NkcWhFsI-wvgX_QA7Lt8wsaNc",
 
   "botConfigToken": "8340988071:AAEaAMarL5IbkCnWYatBo0NF1rcjQ6Rr9bE",
   "botReminderToken": "8535561262:AAG4KCnOfCn55yMOgGgpB3wIL9x2xzHzquw",
@@ -11,7 +11,7 @@
   "botPool": [
     {
       "id": "pool_1",
-      "token": "GANTI_TOKEN_WABOT1_WABOTTT1_BOT",
+      "token": "8567412448:AAHjsgzIXp6gNyPCgaT3ng0sh9Qlx89Ir_I",
       "nama": "Wa Bot 1",
       "username": "@wabottt1_bot",
       "waId": null,
@@ -19,7 +19,7 @@
     },
     {
       "id": "pool_2",
-      "token": "GANTI_TOKEN_WABOT2_WABOTTT2_BOT",
+      "token": "8632982015:AAFaMdVE9Ui92pmW4my7LkhACJxriBa2dP4",
       "nama": "Wa Bot 2",
       "username": "@wabottt2_bot",
       "waId": null,
