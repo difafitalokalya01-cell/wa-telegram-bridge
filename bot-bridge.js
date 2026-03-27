@@ -123,6 +123,29 @@ function ekstrakNomorDariPesan(pesan) {
   return null;
 }
 
+// ===== CEK DUPLIKAT KANDIDAT DI WAID LAIN =====
+function cekDuplikatKandidat(waId, jid) {
+  const hasil = [];
+  const nomorCari = jid.replace(/@.*/, "");
+
+  for (const [id, c] of Object.entries(chatLog)) {
+    // Skip kalau waId sama
+    if (c.waId === waId) continue;
+    // Skip kalau sudah selesai lebih dari 7 hari
+    if (c.status === "selesai" && (Date.now() - c.waktuPesan) > 7 * 24 * 60 * 60 * 1000) continue;
+
+    const nomorEntry = c.jid?.replace(/@.*/, "");
+    if (!nomorEntry) continue;
+
+    // Match by JID (nomor sama)
+    if (nomorEntry === nomorCari && /^\d{7,14}$/.test(nomorCari)) {
+      hasil.push({ id, waId: c.waId, nama: c.nama, status: c.status, waktu: c.waktuPesan });
+    }
+  }
+
+  return hasil;
+}
+
 // ===== DAPATKAN ATAU BUAT ID =====
 function getOrCreateId(waId, jid, nama) {
   const key = `${waId}:${jid}`;
@@ -321,25 +344,45 @@ function setupCallbacks() {
       // Ekstrak nomor dari isi pesan kalau ada
       const nomorDariPesan = ekstrakNomorDariPesan(pesan);
 
+      // Cek duplikat kandidat di waId lain
+      const duplikat = cekDuplikatKandidat(waId, jid);
+
       // Kirim ke slot pool jika ada, fallback ke bot bridge lama
       const store = require("./store");
       const slot  = store.getSlotByWaId(waId);
       const isLid = isLidJid(jid);
+
+      // Buat info duplikat
+      let duplikatInfo = "";
+      if (duplikat.length > 0) {
+        const d = duplikat[0];
+        const statusMap = {
+          baru: "Baru", perlu_dibalas: "Perlu dibalas",
+          menunggu: "Menunggu reply", selesai: "Selesai", tidak_aktif: "Tidak aktif",
+        };
+        const selisihMenit = Math.floor((Date.now() - d.waktu) / 60000);
+        const selisihJam   = Math.floor(selisihMenit / 60);
+        const waktuLabel   = selisihJam > 0 ? `${selisihJam} jam lalu` : `${selisihMenit} menit lalu`;
+        duplikatInfo =
+          `\n⚠️ <b>Kandidat ini sudah pernah chat!</b>\n` +
+          `📋 Tercatat di: <b>[${d.id}]</b> via ${d.waId} — ${waktuLabel}\n` +
+          `Status: ${statusMap[d.status] || d.status} | /lihat ${d.id}`;
+        if (duplikat.length > 1) {
+          duplikatInfo += `\n(+${duplikat.length - 1} chat lain)`;
+        }
+      }
+
       if (slot) {
         const botPool = require("./bot-pool");
-        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid, nomorDariPesan);
+        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid, nomorDariPesan, duplikatInfo);
       } else {
         const nomorHR    = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
         const nomorTampil= jid.replace(/@.*/, "");
         let lidInfo = "";
         if (isLid) {
-          if (nomorDariPesan) {
-            lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-                      `<i>Fix: /fixjid ${id} ${nomorDariPesan} — lalu /${id} pesanmu</i>`;
-          } else {
-            lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-                      `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`;
-          }
+          const fixNomor = nomorDariPesan || "628xxx";
+          lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+                    `<i>Fix: /fixjid ${id} ${fixNomor} — lalu /${id} pesanmu</i>`;
         }
         await kirimTeks(
           `<b>[${id}] ${waId}</b>\n` +
@@ -347,10 +390,11 @@ function setupCallbacks() {
           `👤 <b>${nama}</b>\n` +
           `📞 <b>${nomorTampil}</b>\n\n` +
           `💬 ${pesan}\n\n` +
-          (isLid ? lidInfo : `<i>Balas: /${id} pesanmu</i>`)
+          (isLid ? lidInfo : `<i>Balas: /${id} pesanmu</i>`) +
+          duplikatInfo
         );
       }
-      logger.info("Bot-Bridge", `Pesan masuk [${id}] dari ${nama} via ${waId}`);
+      logger.info("Bot-Bridge", `Pesan masuk [${id}] dari ${nama} via ${waId}${duplikat.length > 0 ? " [DUPLIKAT]" : ""}`);
     },
 
     onMedia: async (waId, jid, nama, buffer, ext, mediaType, caption) => {
@@ -365,19 +409,39 @@ function setupCallbacks() {
       tambahRiwayat(id, nama, caption || `[${mediaType.replace("Message", "")}]`);
       await saveChatLog();
 
+      // Cek duplikat kandidat
+      const duplikatMedia = cekDuplikatKandidat(waId, jid);
+      let duplikatInfoMedia = "";
+      if (duplikatMedia.length > 0) {
+        const d = duplikatMedia[0];
+        const statusMap = { baru: "Baru", perlu_dibalas: "Perlu dibalas", menunggu: "Menunggu", selesai: "Selesai", tidak_aktif: "Tidak aktif" };
+        const selisihMenit = Math.floor((Date.now() - d.waktu) / 60000);
+        const selisihJam   = Math.floor(selisihMenit / 60);
+        const waktuLabel   = selisihJam > 0 ? `${selisihJam} jam lalu` : `${selisihMenit} menit lalu`;
+        duplikatInfoMedia  =
+          `\n⚠️ <b>Kandidat ini sudah pernah chat!</b>\n` +
+          `📋 Tercatat di: <b>[${d.id}]</b> via ${d.waId} — ${waktuLabel}\n` +
+          `Status: ${statusMap[d.status] || d.status} | /lihat ${d.id}`;
+      }
+
       // Kirim ke slot pool jika ada, fallback ke bot bridge lama
       const store = require("./store");
       const slot  = store.getSlotByWaId(waId);
       if (slot) {
         const botPool = require("./bot-pool");
-        await botPool.notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType);
+        await botPool.notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType, buffer, ext, duplikatInfoMedia);
       } else {
+        const isLidMedia = isLidJid(jid);
         const info =
-          `[${id}] ${waId}\n` +
-          `👤 ${nama}\n` +
-          `📞 ${jid.replace(/@.*/, "")}\n` +
+          `<b>[${id}] ${waId}</b>\n` +
+          `👤 <b>${nama}</b>\n` +
+          `📞 <b>${jid.replace(/@.*/, "")}</b>\n` +
           (caption ? `💬 ${caption}\n` : "") +
-          `\nBalas: /${id} pesanmu`;
+          `\n` +
+          (isLidMedia
+            ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n<i>Fix: /fixjid ${id} 628xxx</i>`
+            : `<i>Balas: /${id} pesanmu</i>`) +
+          duplikatInfoMedia;
         if (mediaType === "imageMessage")       await kirimFoto(buffer, info);
         else if (mediaType === "videoMessage")  await kirimVideo(buffer, info);
         else                                    await kirimDokumen(buffer, `file.${ext}`, info);

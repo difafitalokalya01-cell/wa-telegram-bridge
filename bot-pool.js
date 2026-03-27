@@ -17,6 +17,62 @@ async function kirimKeSlot(token, chatId, teks, parseMode = "HTML") {
   }
 }
 
+// ===== KIRIM MEDIA KE SLOT =====
+async function kirimFotoKeSlot(token, chatId, buffer, caption = "") {
+  try {
+    const FormData = require("form-data");
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("photo", buffer, { filename: "photo.jpg", contentType: "image/jpeg" });
+    if (caption) form.append("caption", caption);
+    if (caption) form.append("parse_mode", "HTML");
+    await axios.post(`https://api.telegram.org/bot${token}/sendPhoto`, form, { headers: form.getHeaders() });
+  } catch (err) {
+    logger.error("Bot-Pool", `Gagal kirim foto ke slot: ${err.message}`);
+  }
+}
+
+async function kirimVideoKeSlot(token, chatId, buffer, caption = "") {
+  try {
+    const FormData = require("form-data");
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("video", buffer, { filename: "video.mp4", contentType: "video/mp4" });
+    if (caption) form.append("caption", caption);
+    if (caption) form.append("parse_mode", "HTML");
+    await axios.post(`https://api.telegram.org/bot${token}/sendVideo`, form, { headers: form.getHeaders() });
+  } catch (err) {
+    logger.error("Bot-Pool", `Gagal kirim video ke slot: ${err.message}`);
+  }
+}
+
+async function kirimDokumenKeSlot(token, chatId, buffer, filename, caption = "") {
+  try {
+    const FormData = require("form-data");
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("document", buffer, { filename: filename || "file" });
+    if (caption) form.append("caption", caption);
+    if (caption) form.append("parse_mode", "HTML");
+    await axios.post(`https://api.telegram.org/bot${token}/sendDocument`, form, { headers: form.getHeaders() });
+  } catch (err) {
+    logger.error("Bot-Pool", `Gagal kirim dokumen ke slot: ${err.message}`);
+  }
+}
+
+async function kirimAudioKeSlot(token, chatId, buffer, caption = "") {
+  try {
+    const FormData = require("form-data");
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("audio", buffer, { filename: "audio.ogg", contentType: "audio/ogg" });
+    if (caption) form.append("caption", caption);
+    await axios.post(`https://api.telegram.org/bot${token}/sendAudio`, form, { headers: form.getHeaders() });
+  } catch (err) {
+    logger.error("Bot-Pool", `Gagal kirim audio ke slot: ${err.message}`);
+  }
+}
+
 // ===== SET WEBHOOK UNTUK SLOT =====
 async function setWebhookSlot(token, webhookUrl, path) {
   try {
@@ -40,20 +96,16 @@ function isLidJid(jid) {
 }
 
 // ===== NOTIF PESAN MASUK KE BOT POOL =====
-async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false, nomorDariPesan = null) {
+async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false, nomorDariPesan = null, duplikatInfo = "") {
   const adminId    = store.getConfig().adminTelegramId;
   const lidFlag    = isLid || isLidJid(jid);
   const nomorTampil= jid.replace(/@.*/, "");
 
   let lidInfo = "";
   if (lidFlag) {
-    if (nomorDariPesan) {
-      lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-                `<i>Fix: /fixjid ${id} ${nomorDariPesan} — lalu /${id} pesanmu</i>`;
-    } else {
-      lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-                `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`;
-    }
+    const fixNomor = nomorDariPesan || "628xxx";
+    lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+              `<i>Fix: /fixjid ${id} ${fixNomor} — lalu /${id} pesanmu</i>`;
   }
 
   await kirimKeSlot(
@@ -62,28 +114,51 @@ async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false, 
     `👤 <b>${nama || "."}</b>\n` +
     `📞 <b>${nomorTampil}</b>\n\n` +
     `💬 ${pesan}\n\n` +
-    (lidFlag ? lidInfo : `<i>Balas: /${id} pesanmu</i>`)
+    (lidFlag ? lidInfo : `<i>Balas: /${id} pesanmu</i>`) +
+    duplikatInfo
   );
 }
 
 // ===== NOTIF MEDIA MASUK KE BOT POOL =====
-async function notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType) {
+async function notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType, buffer, ext, duplikatInfo = "") {
   const adminId    = store.getConfig().adminTelegramId;
   const lidFlag    = isLidJid(jid);
   const nomorTampil= jid.replace(/@.*/, "");
-  await kirimKeSlot(
-    slot.token, adminId,
+
+  const infoTeks =
     `<b>[${id}] ${waId}</b>\n` +
     `👤 <b>${nama || "."}</b>\n` +
     `📞 <b>${nomorTampil}</b>\n` +
-    `📎 [${mediaType.replace("Message", "")}]\n` +
     (caption ? `💬 ${caption}\n` : "") +
     `\n` +
     (lidFlag
       ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
         `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
-      : `<i>Balas: /${id} pesanmu</i>`)
-  );
+      : `<i>Balas: /${id} pesanmu</i>`) +
+    duplikatInfo;
+
+  // Kirim media aktual jika buffer tersedia
+  if (buffer) {
+    try {
+      if (mediaType === "imageMessage") {
+        await kirimFotoKeSlot(slot.token, adminId, buffer, infoTeks);
+      } else if (mediaType === "videoMessage") {
+        await kirimVideoKeSlot(slot.token, adminId, buffer, infoTeks);
+      } else if (mediaType === "audioMessage") {
+        await kirimAudioKeSlot(slot.token, adminId, buffer);
+        if (infoTeks) await kirimKeSlot(slot.token, adminId, infoTeks);
+      } else {
+        const filename = `file.${ext || "bin"}`;
+        await kirimDokumenKeSlot(slot.token, adminId, buffer, filename, infoTeks);
+      }
+      return;
+    } catch (err) {
+      logger.error("Bot-Pool", `Gagal kirim media, fallback ke teks: ${err.message}`);
+    }
+  }
+
+  // Fallback ke teks kalau buffer tidak ada atau gagal
+  await kirimKeSlot(slot.token, adminId, infoTeks);
 }
 
 // ===== PROSES PERINTAH DARI BOT POOL =====
