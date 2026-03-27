@@ -174,6 +174,13 @@ async function prosesAntrian() {
   isProcessing = false;
 }
 
+function bersihkanAntrian() {
+  const jumlah = queue.length;
+  queue = [];
+  saveBackup();
+  return jumlah;
+}
+
 function tambahKeAntrian(waId, jid, pesan, media = null, panjangPesanMasuk = 0) {
   queue.push({ waId, jid, pesan, media, panjangPesanMasuk, waktu: Date.now() });
   saveBackup();
@@ -206,4 +213,5 @@ module.exports = {
   setPresenceFunction,
   updateSettings,
   getStatus,
+  bersihkanAntrian,
 };

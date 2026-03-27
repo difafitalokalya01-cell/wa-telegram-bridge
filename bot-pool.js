@@ -215,8 +215,16 @@ async function prosesPerintahPool(msg, poolId) {
     await kirimKeSlot(slot.token, adminId,
       `<b>Status Antrian</b>\n\n` +
       `Menunggu: ${qs.panjangAntrian}\n` +
-      `Proses: ${qs.sedangProses ? "Ya" : "Tidak"}`
+      `Proses: ${qs.sedangProses ? "Ya" : "Tidak"}\n\n` +
+      `<i>Bersihkan: /bersihkanantrian</i>`
     );
+    return;
+  }
+
+  // ===== /bersihkanantrian =====
+  if (teks === "/bersihkanantrian") {
+    const jumlah = queue.bersihkanAntrian();
+    await kirimKeSlot(slot.token, adminId, `✅ Antrian dibersihkan — ${jumlah} pesan dihapus.`);
     return;
   }
 
@@ -303,7 +311,7 @@ async function prosesPerintahPool(msg, poolId) {
   // ===== BALAS: /A pesanmu =====
   const matchBalas = teks.match(/^\/([A-Za-z]+)\s+(.+)$/s);
   if (matchBalas) {
-    const perintahKhusus = ["dc", "lihat", "selesai", "status", "antrian", "start", "fixjid"];
+    const perintahKhusus = ["dc", "lihat", "selesai", "status", "antrian", "start", "fixjid", "bersihkanantrian"];
     const idRaw   = matchBalas[1].toLowerCase();
     const idUpper = matchBalas[1].toUpperCase();
     const pesan   = matchBalas[2].trim();

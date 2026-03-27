@@ -530,7 +530,7 @@ async function prosesPerintah(msg) {
   }
 
   // ===== DAFTAR PERINTAH KHUSUS — cek dulu sebelum proses ID balas =====
-  const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "fixjid", "kirim", "assign", "reset", "pool", "healthcheck", "pengaturan", "blacklist", "tambahblacklist", "hapusblacklist"];
+  const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "fixjid", "kirim", "assign", "reset", "pool", "healthcheck", "pengaturan", "blacklist", "tambahblacklist", "hapusblacklist", "bersihkanantrian"];
 
   // ===== /start =====
   if (teks === "/start") {
@@ -569,8 +569,16 @@ async function prosesPerintah(msg) {
     await kirimTeks(
       `<b>Status Antrian</b>\n\n` +
       `Pesan menunggu: ${status.panjangAntrian}\n` +
-      `Sedang proses: ${status.sedangProses ? "Ya" : "Tidak"}`
+      `Sedang proses: ${status.sedangProses ? "Ya" : "Tidak"}\n\n` +
+      `<i>Bersihkan: /bersihkanantrian</i>`
     );
+    return;
+  }
+
+  // ===== /bersihkanantrian =====
+  if (teks === "/bersihkanantrian") {
+    const jumlah = queue.bersihkanAntrian();
+    await kirimTeks(`✅ Antrian dibersihkan — ${jumlah} pesan dihapus.`);
     return;
   }
 

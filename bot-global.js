@@ -165,8 +165,16 @@ async function prosesPerintah(msg) {
     await kirimTeks(
       `<b>Status Antrian Global</b>\n\n` +
       `Pesan menunggu: ${qs.panjangAntrian}\n` +
-      `Sedang proses: ${qs.sedangProses ? "Ya" : "Tidak"}`
+      `Sedang proses: ${qs.sedangProses ? "Ya" : "Tidak"}\n\n` +
+      `<i>Bersihkan: /bersihkanantrian</i>`
     );
+    return;
+  }
+
+  // ===== /bersihkanantrian =====
+  if (teks === "/bersihkanantrian") {
+    const jumlah = queue.bersihkanAntrian();
+    await kirimTeks(`✅ Antrian global dibersihkan — ${jumlah} pesan dihapus.`);
     return;
   }
 
