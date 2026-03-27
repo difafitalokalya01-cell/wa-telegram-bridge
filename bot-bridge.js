@@ -77,8 +77,12 @@ let { chatLog, chatCounter, jidToId } = loadChatLog();
 
 // ===== CEK APAKAH JID ADALAH LID =====
 function isLidJid(jid) {
-  const nomor = jid.replace(/@.*/, "");
-  return !/^\d{7,15}$/.test(nomor) || nomor.length > 15;
+  if (!jid) return false;
+  const nomor = jid.replace(/@.*/, '');
+  if (!/^[0-9]+$/.test(nomor)) return true;
+  if (nomor.length > 14) return true;
+  if (nomor.length < 7)  return true;
+  return false;
 }
 
 // ===== DAPATKAN ATAU BUAT ID =====
