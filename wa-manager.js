@@ -4,6 +4,11 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  makeInMemoryStore,
+  jidNormalizedUser,
+  isJidBroadcast,
+  isJidStatusBroadcast,
+  isJidNewsletter,
 } = require("@whiskeysockets/baileys");
 const pino   = require("pino");
 const fs     = require("fs");
@@ -15,13 +20,11 @@ const store  = require("./store");
 const AUTH_DIR = "./auth_sessions";
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR);
 
-const instances = {};
-
-// ===== RETRY STATE per waId =====
+const instances  = {};
 const retryCount = {};
 const MAX_RETRY  = 10;
-const BASE_DELAY = 5000;    // 5 detik
-const MAX_DELAY  = 600000;  // 10 menit
+const BASE_DELAY = 5000;
+const MAX_DELAY  = 600000;
 
 let onQR           = null;
 let onPairingCode  = null;
@@ -41,10 +44,115 @@ function setCallbacks(callbacks) {
   if (callbacks.onUnreadFound)  onUnreadFound  = callbacks.onUnreadFound;
 }
 
-// ===== NORMALISASI JID — satu tempat, konsisten =====
+// ===== NORMALISASI JID =====
 function normalizeJid(jid) {
+  if (!jid) return null;
+  try {
+    // Pakai fungsi bawaan Baileys untuk normalisasi
+    const normalized = jidNormalizedUser(jid);
+    return normalized || jid;
+  } catch (e) {
+    // Fallback manual
+    if (jid.includes(":")) return jid.split(":")[0] + "@s.whatsapp.net";
+    return jid;
+  }
+}
+
+// ===== CEK APAKAH JID HARUS DIABAIKAN =====
+function shouldIgnoreJid(jid) {
+  if (!jid) return true;
+  // Abaikan grup
+  if (jid.endsWith("@g.us")) return true;
+  // Abaikan broadcast/status WA
+  if (isJidBroadcast(jid)) return true;
+  if (isJidStatusBroadcast(jid)) return true;
+  // Abaikan newsletter
+  if (isJidNewsletter(jid)) return true;
+  // Abaikan status@broadcast
+  if (jid === "status@broadcast") return true;
+  return false;
+}
+
+// ===== RESOLVE LID KE NOMOR ASLI =====
+async function resolveLid(sock, jid) {
   if (!jid) return jid;
-  return jid.includes(":") ? jid.split(":")[0] + "@s.whatsapp.net" : jid;
+  const nomor = jid.replace(/@.*/, "");
+
+  // Cek apakah ini LID — LID biasanya bukan format nomor internasional normal
+  // Nomor normal: diawali kode negara (1-3 digit) + max 12 digit total
+  // LID: biasanya 15 digit atau format aneh
+  const isNormalNumber = /^[1-9]\d{6,14}$/.test(nomor) && nomor.length <= 15;
+
+  // Kalau sudah format normal dan masuk akal, langsung return
+  if (isNormalNumber && (
+    nomor.startsWith("62") ||  // Indonesia
+    nomor.startsWith("60") ||  // Malaysia
+    nomor.startsWith("65") ||  // Singapura
+    nomor.startsWith("1")  ||  // USA/Canada
+    nomor.startsWith("44") ||  // UK
+    nomor.startsWith("91")     // India
+  )) {
+    return jid;
+  }
+
+  // Coba resolve via store kontak Baileys
+  try {
+    const waStore = instances[Object.keys(instances).find(
+      (k) => instances[k].sock === sock
+    )]?.waStore;
+
+    if (waStore) {
+      // Cari di contacts store
+      const contacts = waStore.contacts || {};
+      for (const [contactJid, contact] of Object.entries(contacts)) {
+        if (contact.lid === jid || contactJid === jid) {
+          if (contact.id && contact.id !== jid) {
+            const resolved = normalizeJid(contact.id);
+            logger.info("WA-Manager", `LID resolved: ${jid} → ${resolved}`);
+            return resolved;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn("WA-Manager", `Gagal resolve LID via store: ${e.message}`);
+  }
+
+  // Coba resolve via onWhatsApp
+  try {
+    const results = await sock.onWhatsApp(nomor);
+    if (results?.[0]?.jid) {
+      const resolved = normalizeJid(results[0].jid);
+      logger.info("WA-Manager", `LID resolved via onWhatsApp: ${jid} → ${resolved}`);
+      return resolved;
+    }
+  } catch (e) {
+    logger.warn("WA-Manager", `Gagal resolve via onWhatsApp: ${e.message}`);
+  }
+
+  // Kembalikan JID asli kalau tidak bisa resolve
+  logger.warn("WA-Manager", `Tidak bisa resolve JID: ${jid}, pakai apa adanya`);
+  return jid;
+}
+
+// ===== EKSTRAK TEKS DARI SEMUA FORMAT PESAN =====
+function ekstrakTeks(msg) {
+  const m = msg.message;
+  if (!m) return null;
+
+  return (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    m.buttonsResponseMessage?.selectedDisplayText ||
+    m.listResponseMessage?.title ||
+    m.templateButtonReplyMessage?.selectedDisplayText ||
+    m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
+    m.reactionMessage?.text ||
+    null
+  );
 }
 
 // ===== CEK BLACKLIST =====
@@ -54,7 +162,6 @@ function isBlacklisted(jid) {
   return (cfg.blacklist || []).includes(nomor);
 }
 
-// ===== HITUNG DELAY BACKOFF =====
 function getRetryDelay(waId) {
   const count = retryCount[waId] || 0;
   return Math.min(BASE_DELAY * Math.pow(2, count), MAX_DELAY);
@@ -77,15 +184,40 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const { version }          = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
+  // ===== BAILEYS IN-MEMORY STORE (untuk resolve LID & kontak) =====
+  const waStore = makeInMemoryStore({
     logger: pino({ level: "silent" }),
-    browser: [`WA-Bridge-${waId}`, "Chrome", "1.0.0"],
-    printQRInTerminal: false,
   });
 
-  instances[waId] = { sock, status: "connecting", jid: null };
+  // Load store dari file kalau ada
+  const storeFile = path.join(AUTH_DIR, `${waId}_store.json`);
+  try {
+    if (fs.existsSync(storeFile)) waStore.fromJSON(JSON.parse(fs.readFileSync(storeFile, "utf-8")));
+  } catch (e) {}
+
+  // Simpan store berkala setiap 5 menit
+  const storeInterval = setInterval(() => {
+    try {
+      fs.writeFileSync(storeFile, JSON.stringify(waStore.toJSON()), "utf-8");
+    } catch (e) {}
+  }, 5 * 60 * 1000);
+
+  const sock = makeWASocket({
+    version,
+    auth:             state,
+    logger:           pino({ level: "silent" }),
+    browser:          [`WA-Bridge-${waId}`, "Chrome", "1.0.0"],
+    printQRInTerminal:false,
+    // Aktifkan getMessage untuk handle pesan terenkripsi
+    getMessage: async (key) => {
+      return { conversation: "" };
+    },
+  });
+
+  // Bind store ke socket
+  waStore.bind(sock.ev);
+
+  instances[waId] = { sock, status: "connecting", jid: null, waStore, storeInterval };
 
   queue.setPresenceFunction(setPresence);
   queue.setSendFunction(kirimPesan);
@@ -115,20 +247,19 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
       const shouldReconnect = !isLoggedOut;
 
       instances[waId].status = "disconnected";
-      logger.warn("WA-Manager", `${waId} terputus (code: ${statusCode}). Reconnect: ${shouldReconnect}`);
+      clearInterval(storeInterval);
+      logger.warn("WA-Manager", `${waId} terputus (code: ${statusCode})`);
 
       if (onDisconnected) await onDisconnected(waId, shouldReconnect);
 
       if (shouldReconnect) {
         const currentRetry = retryCount[waId] || 0;
-
         if (currentRetry >= MAX_RETRY) {
           logger.error("WA-Manager", `${waId} gagal reconnect ${MAX_RETRY}x — berhenti.`);
           if (onDisconnected) await onDisconnected(waId, false, true);
           delete instances[waId];
           return;
         }
-
         const delay = getRetryDelay(waId);
         retryCount[waId] = currentRetry + 1;
         logger.info("WA-Manager", `${waId} reconnect dalam ${Math.round(delay/1000)}s (ke-${currentRetry + 1}/${MAX_RETRY})`);
@@ -144,13 +275,13 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
   sock.ev.on("messaging-history.set", async ({ chats, isLatest }) => {
     if (!isLatest) return;
     try {
-      const unreadChats = chats.filter((c) => c.unreadCount > 0 && !c.id.endsWith("@g.us"));
+      const unreadChats = chats.filter((c) => c.unreadCount > 0 && !shouldIgnoreJid(c.id));
       if (unreadChats.length > 0 && onUnreadFound) {
         logger.info("WA-Manager", `${waId}: ${unreadChats.length} unread dari history sync`);
         await onUnreadFound(waId, unreadChats.map((c) => ({
           jid:         normalizeJid(c.id),
           unreadCount: c.unreadCount,
-          name:        c.name || c.id.replace(/@.*/, ""),
+          name:        c.name || c.notify || c.id.replace(/@.*/, ""),
         })));
       }
     } catch (err) {
@@ -164,14 +295,39 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     for (const msg of messages) {
       try {
         if (msg.key.fromMe) continue;
-        if (msg.key.remoteJid.endsWith("@g.us")) continue;
 
-        const jid      = normalizeJid(msg.key.remoteJid);
-        const pushName = msg.pushName || jid.replace(/@.*/, "");
+        const remoteJid = msg.key.remoteJid;
+
+        // ===== ABAIKAN STORY, STATUS, BROADCAST, GRUP =====
+        if (shouldIgnoreJid(remoteJid)) continue;
+
+        // ===== ABAIKAN PESAN KOSONG =====
+        if (!msg.message) continue;
+
+        // ===== ABAIKAN TIPE PESAN SISTEM =====
+        const msgType = Object.keys(msg.message)[0];
+        const ignoredTypes = [
+          "protocolMessage",
+          "senderKeyDistributionMessage",
+          "messageContextInfo",
+          "reactionMessage",
+        ];
+        if (ignoredTypes.includes(msgType)) continue;
+
+        // ===== NORMALISASI & RESOLVE JID =====
+        const jidNorm  = normalizeJid(remoteJid);
+        const jidFinal = await resolveLid(sock, jidNorm);
+
+        // Ambil nama dari berbagai sumber
+        const pushName =
+          msg.pushName ||
+          waStore.contacts[remoteJid]?.name ||
+          waStore.contacts[remoteJid]?.notify ||
+          jidFinal.replace(/@.*/, "");
 
         // ===== CEK BLACKLIST =====
-        if (isBlacklisted(jid)) {
-          logger.info("WA-Manager", `Pesan dari ${jid} diblokir (blacklist)`);
+        if (isBlacklisted(jidFinal)) {
+          logger.info("WA-Manager", `Pesan dari ${jidFinal} diblokir (blacklist)`);
           continue;
         }
 
@@ -182,10 +338,12 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
           logger.error("WA-Manager", `Gagal auto read: ${e.message}`);
         }
 
-        const mediaTypes = ["imageMessage", "videoMessage", "documentMessage", "audioMessage"];
+        // ===== DETEKSI TIPE PESAN =====
+        const mediaTypes = ["imageMessage", "videoMessage", "documentMessage", "audioMessage", "stickerMessage"];
         const mediaType  = mediaTypes.find((t) => msg.message?.[t]);
 
-        if (mediaType) {
+        if (mediaType && mediaType !== "stickerMessage") {
+          // ===== PESAN MEDIA =====
           try {
             const buffer  = await downloadMediaMessage(msg, "buffer", {});
             const ext     = {
@@ -193,19 +351,27 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
               videoMessage:    "mp4",
               documentMessage: msg.message.documentMessage?.fileName?.split(".").pop() || "bin",
               audioMessage:    "ogg",
-            }[mediaType];
+            }[mediaType] || "bin";
             const caption = msg.message[mediaType]?.caption || "";
-            if (onMedia) await onMedia(waId, jid, pushName, buffer, ext, mediaType, caption);
+            if (onMedia) await onMedia(waId, jidFinal, pushName, buffer, ext, mediaType, caption);
           } catch (err) {
-            logger.error("WA-Manager", `Gagal download media dari ${jid}: ${err.message}`);
+            logger.error("WA-Manager", `Gagal download media dari ${jidFinal}: ${err.message}`);
+            // Tetap kirim notif walaupun media gagal didownload
+            if (onMessage) await onMessage(waId, jidFinal, pushName, `[${mediaType.replace("Message", "")} - gagal diunduh]`);
           }
         } else {
-          const pesan =
-            msg.message?.conversation ||
-            msg.message?.extendedTextMessage?.text ||
-            "[Pesan tidak dikenali]";
-          if (onMessage) await onMessage(waId, jid, pushName, pesan);
+          // ===== PESAN TEKS (semua format) =====
+          const pesan = ekstrakTeks(msg);
+
+          // Skip kalau benar-benar tidak ada teks sama sekali
+          if (!pesan) {
+            logger.warn("WA-Manager", `Pesan dari ${jidFinal} tidak bisa diekstrak (type: ${msgType})`);
+            continue;
+          }
+
+          if (onMessage) await onMessage(waId, jidFinal, pushName, pesan);
         }
+
       } catch (err) {
         logger.error("WA-Manager", `Error proses pesan: ${err.message}`);
       }
@@ -261,13 +427,17 @@ async function cekNomorAktif(waId, jid) {
 }
 
 async function disconnectWA(waId) {
-  const sock = instances[waId]?.sock;
+  const sock      = instances[waId]?.sock;
+  const interval  = instances[waId]?.storeInterval;
   if (!sock) throw new Error(`${waId} tidak ditemukan`);
+  if (interval) clearInterval(interval);
   await sock.logout();
   delete instances[waId];
   delete retryCount[waId];
-  const authPath = path.join(AUTH_DIR, waId);
-  if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true });
+  const authPath  = path.join(AUTH_DIR, waId);
+  const storePath = path.join(AUTH_DIR, `${waId}_store.json`);
+  if (fs.existsSync(authPath))  fs.rmSync(authPath, { recursive: true });
+  if (fs.existsSync(storePath)) fs.unlinkSync(storePath);
   logger.info("WA-Manager", `${waId} berhasil dihapus`);
 }
 
