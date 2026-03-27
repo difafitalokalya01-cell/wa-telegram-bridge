@@ -87,32 +87,48 @@ function persistContactStore(waId) {
 }
 
 // ===== RESOLVE LID KE NOMOR ASLI =====
-async function resolveLid(sock, waId, jid) {
+async function resolveLid(sock, waId, jid, pushName) {
   if (!jid) return jid;
   const nomor = jid.replace(/@.*/, "");
 
-  // Cek apakah sudah nomor normal (diawali kode negara, max 15 digit)
-  if (/^\d{7,15}$/.test(nomor) && nomor.length <= 15) {
-    // Nomor normal — tidak perlu resolve
-    return jid;
-  }
+  // Cek apakah sudah nomor normal (7-15 digit)
+  if (/^\d{7,15}$/.test(nomor)) return jid;
 
-  // Cek di contact store dulu
+  // 1. Cek contact store
   if (contactStore[waId]?.[jid]) {
-    return `${contactStore[waId][jid]}@s.whatsapp.net`;
+    const resolved = `${contactStore[waId][jid]}@s.whatsapp.net`;
+    logger.info("WA-Manager", `LID resolved via store: ${jid} → ${resolved}`);
+    return resolved;
   }
 
-  // Coba via onWhatsApp
+  // 2. Cek chatlog — cari entry waId + nama sama
+  try {
+    const { getChatLog } = require("./bot-bridge");
+    const chatLog = getChatLog();
+    for (const entry of Object.values(chatLog)) {
+      if (entry.waId !== waId) continue;
+      const nomorEntry = entry.jid?.replace(/@.*/, "");
+      if (!nomorEntry || !/^\d{7,15}$/.test(nomorEntry)) continue;
+      if (pushName && entry.nama && entry.nama.toLowerCase() === pushName.toLowerCase()) {
+        const resolved = `${nomorEntry}@s.whatsapp.net`;
+        saveContact(waId, jid, nomorEntry);
+        logger.info("WA-Manager", `LID resolved via chatlog: ${jid} → ${resolved}`);
+        return resolved;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Coba via onWhatsApp
   try {
     const results = await sock.onWhatsApp(nomor);
     if (results?.[0]?.jid) {
       const resolved = normalizeJid(results[0].jid);
-      logger.info("WA-Manager", `LID resolved: ${jid} → ${resolved}`);
+      const nomorResolved = resolved.replace(/@.*/, "");
+      saveContact(waId, jid, nomorResolved);
+      logger.info("WA-Manager", `LID resolved via onWhatsApp: ${jid} → ${resolved}`);
       return resolved;
     }
-  } catch (e) {
-    // Silent fail — onWhatsApp tidak selalu bisa resolve LID
-  }
+  } catch (e) {}
 
   logger.warn("WA-Manager", `Tidak bisa resolve JID: ${jid}`);
   return jid;
@@ -299,8 +315,9 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         if (ignoredTypes.includes(msgType)) continue;
 
         // ===== NORMALISASI & RESOLVE JID =====
-        const jidNorm  = normalizeJid(remoteJid);
-        const jidFinal = await resolveLid(sock, waId, jidNorm);
+        const jidNorm    = normalizeJid(remoteJid);
+        const pushNameRaw = msg.pushName || "";
+        const jidFinal   = await resolveLid(sock, waId, jidNorm, pushNameRaw);
 
         // Simpan mapping kontak
         const nomorFinal = jidFinal.replace(/@.*/, "");

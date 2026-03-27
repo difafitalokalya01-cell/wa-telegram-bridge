@@ -70,6 +70,13 @@ function loadChatLog() {
 
 let { chatLog, chatCounter, jidToId } = loadChatLog();
 
+
+// ===== CEK APAKAH JID ADALAH LID =====
+function isLidJid(jid) {
+  const nomor = jid.replace(/@.*/, "");
+  return !/^\d{7,15}$/.test(nomor) || nomor.length > 15;
+}
+
 // ===== DAPATKAN ATAU BUAT ID =====
 function getOrCreateId(waId, jid, nama) {
   const key = `${waId}:${jid}`;
@@ -268,18 +275,23 @@ function setupCallbacks() {
       // Kirim ke slot pool jika ada, fallback ke bot bridge lama
       const store = require("./store");
       const slot  = store.getSlotByWaId(waId);
+      const isLid = isLidJid(jid);
       if (slot) {
         const botPool = require("./bot-pool");
-        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan);
+        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid);
       } else {
         const nomorHR = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
+        const nomorTampil = jid.replace(/@.*/, "");
         await kirimTeks(
           `<b>[${id}] ${waId}</b>\n` +
           `📱 Diterima: <code>${nomorHR}</code>\n` +
           `👤 <b>${nama}</b>\n` +
-          `📞 <b>${jid.replace(/@.*/, "")}</b>\n\n` +
+          `📞 <b>${nomorTampil}</b>\n\n` +
           `💬 ${pesan}\n\n` +
-          `<i>Balas: /${id} pesanmu</i>`
+          (isLid
+            ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+              `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
+            : `<i>Balas: /${id} pesanmu</i>`)
         );
       }
       logger.info("Bot-Bridge", `Pesan masuk [${id}] dari ${nama} via ${waId}`);

@@ -29,30 +29,47 @@ async function setWebhookSlot(token, webhookUrl, path) {
   }
 }
 
+// ===== CEK LID =====
+function isLidJid(jid) {
+  const nomor = jid.replace(/@.*/, "");
+  return !/^\d{7,15}$/.test(nomor) || nomor.length > 15;
+}
+
 // ===== NOTIF PESAN MASUK KE BOT POOL =====
-async function notifPesanMasuk(slot, id, waId, nama, jid, pesan) {
-  const adminId = store.getConfig().adminTelegramId;
+async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false) {
+  const adminId    = store.getConfig().adminTelegramId;
+  const lidFlag    = isLid || isLidJid(jid);
+  const nomorTampil= jid.replace(/@.*/, "");
   await kirimKeSlot(
     slot.token, adminId,
     `<b>[${id}] ${waId}</b>\n` +
-    `👤 <b>${nama}</b>\n` +
-    `📞 <b>${jid.replace(/@.*/, "")}</b>\n\n` +
+    `👤 <b>${nama || "."}</b>\n` +
+    `📞 <b>${nomorTampil}</b>\n\n` +
     `💬 ${pesan}\n\n` +
-    `<i>Balas: /${id} pesanmu</i>`
+    (lidFlag
+      ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+        `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
+      : `<i>Balas: /${id} pesanmu</i>`)
   );
 }
 
 // ===== NOTIF MEDIA MASUK KE BOT POOL =====
 async function notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType) {
-  const adminId = store.getConfig().adminTelegramId;
+  const adminId    = store.getConfig().adminTelegramId;
+  const lidFlag    = isLidJid(jid);
+  const nomorTampil= jid.replace(/@.*/, "");
   await kirimKeSlot(
     slot.token, adminId,
     `<b>[${id}] ${waId}</b>\n` +
-    `👤 <b>${nama}</b>\n` +
-    `📞 <b>${jid.replace(/@.*/, "")}</b>\n` +
+    `👤 <b>${nama || "."}</b>\n` +
+    `📞 <b>${nomorTampil}</b>\n` +
     `📎 [${mediaType.replace("Message", "")}]\n` +
     (caption ? `💬 ${caption}\n` : "") +
-    `\n<i>Balas: /${id} pesanmu</i>`
+    `\n` +
+    (lidFlag
+      ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+        `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
+      : `<i>Balas: /${id} pesanmu</i>`)
   );
 }
 
