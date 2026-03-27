@@ -95,6 +95,7 @@ async function prosesPerintah(msg) {
       `/tambahwa - Tambah akun WA baru\n` +
       `/hapuswa - Hapus akun WA\n` +
       `/daftarwa - Lihat semua akun WA\n` +
+      `/pairingulang namaWA - Hubungkan ulang WA yang terputus\n` +
       `/batal - Batalkan proses yang sedang berjalan`
     );
     return;
@@ -228,16 +229,104 @@ async function prosesPerintah(msg) {
   }
 
   if (teks === "/daftarwa") {
-    const status = waManager.getStatus();
-    const daftar = Object.entries(status);
-    if (daftar.length === 0) { await kirimTeks("Belum ada akun WA yang terhubung."); return; }
-    const listTeks = daftar
-      .map(([id, s]) =>
-        `<b>${id}</b>\n` +
-        `Status: ${s.status === "connected" ? "Terhubung" : "Terputus"}\n` +
-        `Nomor: <code>${s.jid?.replace(/@.*/, "") || "-"}</code>`
-      ).join("\n\n");
+    const status  = waManager.getStatus();
+    const cfg     = store.getConfig();
+    const semuaWa = new Set([
+      ...Object.keys(status),
+      ...Object.keys(cfg.waAccounts || {}),
+    ]);
+
+    if (semuaWa.size === 0) { await kirimTeks("Belum ada akun WA yang terdaftar."); return; }
+
+    const listTeks = [...semuaWa]
+      .map((id) => {
+        const s      = status[id];
+        const koneksi= s ? (s.status === "connected" ? "Terhubung ✅" : "Terputus ❌") : "Offline ❌";
+        const nomor  = s?.jid?.replace(/@.*/, "") || "-";
+        return (
+          `<b>${id}</b>\n` +
+          `Status: ${koneksi}\n` +
+          `Nomor: <code>${nomor}</code>\n` +
+          (s?.status !== "connected" ? `Pairing ulang: /pairingulang ${id}` : "")
+        );
+      })
+      .join("\n\n");
+
     await kirimTeks(`<b>Daftar Akun WA</b>\n\n${listTeks}`);
+    return;
+  }
+
+  // ===== /pairingulang namaWA — reconnect tanpa hapus chatlog =====
+  if (teks.startsWith("/pairingulang ")) {
+    const namaWa = teks.replace("/pairingulang ", "").trim();
+    const cfg    = store.getConfig();
+
+    if (!cfg.waAccounts?.[namaWa] && !waManager.getStatus()[namaWa]) {
+      await kirimTeks(`❌ Akun <b>${namaWa}</b> tidak ditemukan.`);
+      return;
+    }
+
+    await kirimTeks(
+      `<b>Pairing Ulang ${namaWa}</b>\n\n` +
+      `Pilih metode:\n` +
+      `Ketik <code>qr ${namaWa}</code> - Scan QR Code\n` +
+      `Ketik <code>nomor ${namaWa}</code> - Pairing dengan nomor ponsel`
+    );
+    pendingTambah = { step: "pairingUlangMetode", namaWa };
+    return;
+  }
+
+  // ===== Handler step pairing ulang =====
+  if (pendingTambah?.step === "pairingUlangMetode") {
+    const input  = teks.trim().toLowerCase().split(" ");
+    const metode = input[0];
+    const namaWa = pendingTambah.namaWa;
+
+    if (!["qr", "nomor"].includes(metode)) {
+      await kirimTeks(`Ketik <code>qr ${namaWa}</code> atau <code>nomor ${namaWa}</code>.`);
+      return;
+    }
+
+    if (metode === "qr") {
+      pendingTambah = null;
+      await kirimTeks(`Menghubungkan ulang <b>${namaWa}</b>...\nQR code akan dikirim sebentar lagi.`);
+      try {
+        // Disconnect dulu kalau masih ada instance
+        try { await waManager.disconnectWA(namaWa); } catch (e) {}
+        await waManager.connectWA(namaWa, false, null);
+        logger.info("Bot-WA", `${namaWa} mulai pairing ulang via QR`);
+      } catch (err) {
+        await kirimTeks(`❌ Gagal: ${err.message}`);
+      }
+    } else {
+      pendingTambah = { step: "pairingUlangNomor", namaWa };
+      await kirimTeks(
+        `Ketik nomor WhatsApp <b>${namaWa}</b>:\n\n` +
+        `Contoh: <code>628123456789</code>\n\n` +
+        `Ketik /batal untuk membatalkan.`
+      );
+    }
+    return;
+  }
+
+  if (pendingTambah?.step === "pairingUlangNomor") {
+    const nomor  = teks.trim().replace(/[^0-9]/g, "");
+    const namaWa = pendingTambah.namaWa;
+
+    if (!nomor || nomor.length < 10) {
+      await kirimTeks("Nomor tidak valid. Contoh: <code>628123456789</code>");
+      return;
+    }
+
+    pendingTambah = null;
+    await kirimTeks(`Menghubungkan ulang <b>${namaWa}</b>...\nKode pairing akan dikirim sebentar lagi.`);
+    try {
+      try { await waManager.disconnectWA(namaWa); } catch (e) {}
+      await waManager.connectWA(namaWa, true, nomor);
+      logger.info("Bot-WA", `${namaWa} mulai pairing ulang via nomor ${nomor}`);
+    } catch (err) {
+      await kirimTeks(`❌ Gagal: ${err.message}`);
+    }
     return;
   }
 }

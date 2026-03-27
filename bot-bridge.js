@@ -470,18 +470,20 @@ function setupCallbacks() {
         await kirimTeks(ringkasanTeks);
       }
 
-      // Forward tiap chat dengan detail
+      // Forward tiap chat dengan jeda 5 detik antar kontak
       for (const chat of unreadChats) {
         const jidNorm = chat.jid;
         const id      = getOrCreateId(waId, jidNorm, chat.name);
 
-        // Update status hanya kalau belum ada status aktif
+        // Update status
         if (!["menunggu", "perlu_dibalas"].includes(chatLog[id].status)) {
           chatLog[id].status = "perlu_dibalas";
         }
         chatLog[id].waktuPesan = Date.now();
-        if (chat.pesanTerakhir) chatLog[id].pesanTerakhir = chat.pesanTerakhir;
-        // Reset reminder
+        if (chat.pesanTerakhir) {
+          chatLog[id].pesanTerakhir = chat.pesanTerakhir;
+          tambahRiwayat(id, chat.name || "?", chat.pesanTerakhir);
+        }
         chatLog[id].reminder1Terkirim = false;
         chatLog[id].reminder2Terkirim = false;
         chatLog[id].reminder3Terkirim = false;
@@ -489,12 +491,21 @@ function setupCallbacks() {
 
         const isLid       = isLidJid(jidNorm);
         const nomorTampil = jidNorm.replace(/@.*/, "");
-        const pesanInfo   = chat.pesanTerakhir
-          ? `💬 "${chat.pesanTerakhir.slice(0, 80)}"`
-          : `📨 ${chat.unreadCount} pesan belum dibaca (isi tidak dapat diambil)`;
-        const lidInfo = isLid
+        const lidInfo     = isLid
           ? `\n⚠️ <i>Nomor belum terdeteksi</i>\n<i>Fix: /fixjid ${id} 628xxx</i>`
           : `\n<i>Balas: /${id} pesanmu</i>`;
+
+        // Susun isi pesan
+        let pesanInfo = "";
+        if (chat.semuaPesan && chat.semuaPesan.length > 0) {
+          const daftarPesan = chat.semuaPesan
+            .slice(-10) // maksimal 10 pesan terakhir
+            .map((p, i) => `${i + 1}. "${p.slice(0, 80)}${p.length > 80 ? "..." : ""}"`)
+            .join("\n");
+          pesanInfo = `📨 <b>${chat.unreadCount} pesan terlewat:</b>\n${daftarPesan}`;
+        } else {
+          pesanInfo = `📨 <b>${chat.unreadCount} pesan terlewat</b>\n<i>(isi pesan tidak dapat diambil)</i>`;
+        }
 
         const notifTeks =
           `<b>[${id}] Terlewat - ${waId}</b>\n` +
@@ -509,7 +520,8 @@ function setupCallbacks() {
           await kirimTeks(notifTeks);
         }
 
-        await new Promise((r) => setTimeout(r, 2000));
+        // Jeda 5 detik antar kontak
+        await new Promise((r) => setTimeout(r, 5000));
       }
     },
   });

@@ -351,40 +351,55 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
 
       logger.info("WA-Manager", `${waId}: ${unreadChats.length} chat unread saat reconnect`);
 
-      // Coba fetch pesan aktual dari setiap chat unread
+      // Coba fetch semua pesan dari setiap chat unread
       const unreadDenganPesan = [];
       for (const chat of unreadChats) {
         const jid  = normalizeJid(chat.id);
         const nama = chat.name || chat.notify || jid.replace(/@.*/, "");
+        const semuaPesan = [];
+
         try {
-          // Coba ambil pesan terbaru dari chat ini
-          const msgs = await sock.fetchMessages({ id: jid, count: chat.unreadCount });
+          // Coba ambil semua pesan unread
+          const msgs = await sock.fetchMessages({ id: jid, count: Math.min(chat.unreadCount, 10) });
           if (msgs?.messages?.length > 0) {
-            // Proses tiap pesan yang berhasil difetch
             for (const msg of msgs.messages) {
               if (msg.key.fromMe) continue;
-              const pesan = msg.message?.conversation ||
-                            msg.message?.extendedTextMessage?.text || null;
+              // Ekstrak teks dari berbagai format
+              const pesan =
+                msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                msg.message?.imageMessage?.caption ||
+                msg.message?.videoMessage?.caption ||
+                msg.message?.documentMessage?.caption ||
+                null;
+              const mediaType = ["imageMessage","videoMessage","documentMessage","audioMessage"]
+                .find(t => msg.message?.[t]);
               if (pesan) {
-                unreadDenganPesan.push({ jid, nama, pesan, unreadCount: chat.unreadCount });
-                break; // Ambil pesan terakhir saja
+                semuaPesan.push(pesan);
+              } else if (mediaType) {
+                semuaPesan.push(`[${mediaType.replace("Message","")}]`);
               }
             }
-          } else {
-            unreadDenganPesan.push({ jid, nama, pesan: null, unreadCount: chat.unreadCount });
           }
         } catch (e) {
-          // fetchMessages tidak selalu tersedia — fallback ke notif saja
-          unreadDenganPesan.push({ jid, nama, pesan: null, unreadCount: chat.unreadCount });
+          // fetchMessages tidak tersedia — lanjut tanpa isi pesan
         }
+
+        unreadDenganPesan.push({
+          jid,
+          nama,
+          unreadCount: chat.unreadCount,
+          semuaPesan: semuaPesan.length > 0 ? semuaPesan : null,
+        });
       }
 
       if (onUnreadFound) {
         await onUnreadFound(waId, unreadDenganPesan.map((c) => ({
-          jid:         c.jid,
-          unreadCount: c.unreadCount,
-          name:        c.nama,
-          pesanTerakhir: c.pesan,
+          jid:          c.jid,
+          unreadCount:  c.unreadCount,
+          name:         c.nama,
+          semuaPesan:   c.semuaPesan,
+          pesanTerakhir:c.semuaPesan ? c.semuaPesan[c.semuaPesan.length - 1] : null,
         })));
       }
     } catch (err) {
