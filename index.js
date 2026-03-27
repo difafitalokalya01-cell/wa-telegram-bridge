@@ -1,69 +1,47 @@
-const express = require("express");
-const fs = require("fs");
-const axios = require("axios");
-const logger = require("./logger");
+const express   = require("express");
+const logger    = require("./logger");
+const store     = require("./store");
 const waManager = require("./wa-manager");
-const queue = require("./queue");
+const queue     = require("./queue");
 const botBridge = require("./bot-bridge");
-const botWa = require("./bot-wa");
+const botWa     = require("./bot-wa");
 const botConfig = require("./bot-config");
-const botReminder = require("./bot-reminder");
+const botReminder= require("./bot-reminder");
+const axios     = require("axios");
 
-const PORT = process.env.PORT || 3000;
+const PORT        = process.env.PORT || 3000;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
 
 const app = express();
 app.use(express.json());
 
-// ===== CONFIG MANAGEMENT =====
-const CONFIG_FILE = "./config.json";
-const DATA_FILE = "./auth_sessions/data.json";
+// ===== LOAD CONFIG =====
+const config = store.loadConfig();
 
-function loadConfig() {
-  const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
-  if (fs.existsSync(DATA_FILE)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-      config.waAccounts = data.waAccounts || {};
-      config.activeAccounts = data.activeAccounts || {};
-      config.blacklist = data.blacklist || config.blacklist || [];
-      config.queueSettings = data.queueSettings || config.queueSettings;
-      config.reminderSettings = data.reminderSettings || config.reminderSettings;
-    } catch (e) {
-      logger.error("Index", `Gagal load data.json: ${e.message}`);
-    }
-  }
-  return config;
-}
-
-function saveData(config) {
+// ===== GLOBAL ERROR HANDLER — bot tidak crash diam-diam =====
+process.on("unhandledRejection", async (reason) => {
+  const pesan = reason instanceof Error ? reason.stack || reason.message : String(reason);
+  logger.error("Index", `Unhandled Rejection: ${pesan}`);
   try {
-    const data = {
-      waAccounts: config.waAccounts || {},
-      activeAccounts: config.activeAccounts || {},
-      blacklist: config.blacklist || [],
-      queueSettings: config.queueSettings,
-      reminderSettings: config.reminderSettings,
-    };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    logger.error("Index", `Gagal save data.json: ${e.message}`);
-  }
-}
+    await botBridge.kirimError(`<b>Unhandled Error</b>\n\n<code>${pesan.slice(0, 1000)}</code>`);
+  } catch (e) {}
+});
 
-global.loadConfig = loadConfig;
-global.saveData = saveData;
+process.on("uncaughtException", async (err) => {
+  logger.error("Index", `Uncaught Exception: ${err.stack || err.message}`);
+  try {
+    await botBridge.kirimError(`<b>Uncaught Exception — Bot mungkin tidak stabil</b>\n\n<code>${(err.stack || err.message).slice(0, 1000)}</code>`);
+  } catch (e) {}
+  // Beri waktu kirim notif sebelum exit
+  setTimeout(() => process.exit(1), 3000);
+});
 
-const config = loadConfig();
-
-const app2 = express();
-app.use(express.json());
-
+// ===== SETUP CALLBACKS — urutan penting: bridge dulu, baru wa =====
 botBridge.setupCallbacks();
 botWa.setupQRCallback();
 queue.updateSettings(config.queueSettings);
 
-// ===== WEBHOOK BOT BRIDGE =====
+// ===== WEBHOOK ROUTES =====
 app.post("/webhook/bridge", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -74,7 +52,6 @@ app.post("/webhook/bridge", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK BOT WA =====
 app.post("/webhook/wa", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -85,7 +62,6 @@ app.post("/webhook/wa", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK BOT CONFIG =====
 app.post("/webhook/config", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -96,7 +72,6 @@ app.post("/webhook/config", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK BOT REMINDER =====
 app.post("/webhook/reminder", async (req, res) => {
   res.sendStatus(200);
   try {
@@ -109,50 +84,52 @@ app.post("/webhook/reminder", async (req, res) => {
 
 // ===== HEALTH CHECK =====
 app.get("/health", (req, res) => {
-  const waStatus = waManager.getStatus();
-  const qStatus = queue.getStatus();
   res.json({
-    status: "ok",
-    wa: waStatus,
-    queue: qStatus,
-    uptime: process.uptime(),
+    status:  "ok",
+    wa:      waManager.getStatus(),
+    queue:   queue.getStatus(),
+    uptime:  process.uptime(),
   });
 });
 
 app.get("/", (req, res) => res.send("WA-Telegram Bridge aktif! ✅"));
 
-process.on("SIGTERM", () => {
-  logger.info("Index", "SIGTERM diterima, shutdown gracefully...");
-  process.exit(0);
-});
+// ===== GRACEFUL SHUTDOWN =====
+process.on("SIGTERM", () => { logger.info("Index", "SIGTERM diterima, shutdown..."); process.exit(0); });
+process.on("SIGINT",  () => { logger.info("Index", "SIGINT diterima, shutdown...");  process.exit(0); });
 
-process.on("SIGINT", () => {
-  logger.info("Index", "SIGINT diterima, shutdown gracefully...");
-  process.exit(0);
-});
-
+// ===== START =====
 app.listen(PORT, async () => {
   logger.info("Index", `Server jalan di port ${PORT}`);
 
-  if (WEBHOOK_URL) {
+  // Warning kalau WEBHOOK_URL tidak diset
+  if (!WEBHOOK_URL) {
+    logger.warn("Index", "WEBHOOK_URL tidak diset — bot tidak akan menerima pesan dari Telegram! Set env variable WEBHOOK_URL=https://domain-kamu.com");
+  } else {
     const bots = [
-      { token: config.botBridgeToken, path: "bridge" },
-      { token: config.botWaToken, path: "wa" },
-      { token: config.botConfigToken, path: "config" },
-      { token: config.botReminderToken, path: "reminder" },
+      { token: config.botBridgeToken,  path: "bridge"  },
+      { token: config.botWaToken,      path: "wa"      },
+      { token: config.botConfigToken,  path: "config"  },
+      { token: config.botReminderToken,path: "reminder" },
     ];
 
     for (const bot of bots) {
       try {
-        await axios.post(
-          `https://api.telegram.org/bot${bot.token}/setWebhook`,
-          { url: `${WEBHOOK_URL}/webhook/${bot.path}` }
-        );
+        await axios.post(`https://api.telegram.org/bot${bot.token}/setWebhook`, {
+          url: `${WEBHOOK_URL}/webhook/${bot.path}`,
+        });
         logger.info("Index", `Webhook diset untuk bot ${bot.path}`);
       } catch (err) {
         logger.error("Index", `Gagal set webhook ${bot.path}: ${err.message}`);
       }
     }
+  }
+
+  // Arsip chatlog lama saat start
+  try {
+    botBridge.arsipChatLogLama();
+  } catch (e) {
+    logger.error("Index", `Gagal arsip chatlog: ${e.message}`);
   }
 
   // Reconnect semua WA

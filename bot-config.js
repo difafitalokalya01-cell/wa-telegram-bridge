@@ -1,47 +1,32 @@
-const axios = require("axios");
-const fs = require("fs");
-const logger = require("./logger");
-const queue = require("./queue");
+const axios     = require("axios");
+const logger    = require("./logger");
+const queue     = require("./queue");
 const waManager = require("./wa-manager");
+const store     = require("./store");
 
-const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
-const TOKEN = config.botConfigToken;
-const ADMIN_ID = config.adminTelegramId;
-
-const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
+function getToken()     { return store.getConfig().botConfigToken; }
+function getAdminId()   { return store.getConfig().adminTelegramId; }
+function getTelegramApi(){ return `https://api.telegram.org/bot${getToken()}`; }
 
 async function kirimTeks(teks, parseMode = "HTML") {
   try {
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: ADMIN_ID,
-      text: teks,
-      parse_mode: parseMode,
+    await axios.post(`${getTelegramApi()}/sendMessage`, {
+      chat_id: getAdminId(), text: teks, parse_mode: parseMode,
     });
   } catch (err) {
     logger.error("Bot-Config", `Gagal kirim teks: ${err.message}`);
   }
 }
 
-function simpanConfig(cfg) {
-  const data = {
-    waAccounts: cfg.waAccounts || {},
-    activeAccounts: cfg.activeAccounts || {},
-    blacklist: cfg.blacklist || [],
-    queueSettings: cfg.queueSettings,
-  };
-  fs.writeFileSync("./auth_sessions/data.json", JSON.stringify(data, null, 2));
-}
-
 async function prosesPerintah(msg) {
-  const teks = msg.text || "";
+  const teks   = msg.text || "";
   const fromId = String(msg.from?.id);
 
-  if (fromId !== String(ADMIN_ID)) {
+  if (fromId !== String(getAdminId())) {
     await kirimTeks("Kamu tidak punya akses.");
     return;
   }
 
-  // /start
   if (teks === "/start") {
     await kirimTeks(
       `<b>Bot Konfigurasi</b>\n\n` +
@@ -69,214 +54,163 @@ async function prosesPerintah(msg) {
       `/pengaturan - Lihat semua pengaturan\n` +
       `/healthcheck - Cek status sistem`
     );
+    return;
   }
 
-  // /blacklist
-  else if (teks === "/blacklist") {
-    const cfg = global.loadConfig();
+  if (teks === "/blacklist") {
+    const cfg  = store.getConfig();
     const list = cfg.blacklist || [];
-    if (list.length === 0) {
-      await kirimTeks("Blacklist kosong.");
-      return;
-    }
+    if (list.length === 0) { await kirimTeks("Blacklist kosong."); return; }
     await kirimTeks(`<b>Blacklist (${list.length}):</b>\n\n` + list.map((n) => `- <code>${n}</code>`).join("\n"));
+    return;
   }
 
-  // /tambahblacklist 628xxx
-  else if (teks.startsWith("/tambahblacklist ")) {
+  if (teks.startsWith("/tambahblacklist ")) {
     const nomor = teks.replace("/tambahblacklist ", "").trim();
-    const cfg = global.loadConfig();
-    if (cfg.blacklist.includes(nomor)) {
-      await kirimTeks(`${nomor} sudah ada di blacklist.`);
-      return;
-    }
+    if (!nomor) { await kirimTeks("❌ Masukkan nomor yang valid."); return; }
+    const cfg   = store.getConfig();
+    if (cfg.blacklist.includes(nomor)) { await kirimTeks(`${nomor} sudah ada di blacklist.`); return; }
     cfg.blacklist.push(nomor);
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     await kirimTeks(`<code>${nomor}</code> ditambahkan ke blacklist.`);
     logger.info("Bot-Config", `Blacklist tambah: ${nomor}`);
+    return;
   }
 
-  // /hapusblacklist 628xxx
-  else if (teks.startsWith("/hapusblacklist ")) {
+  if (teks.startsWith("/hapusblacklist ")) {
     const nomor = teks.replace("/hapusblacklist ", "").trim();
-    const cfg = global.loadConfig();
-    const idx = cfg.blacklist.indexOf(nomor);
-    if (idx === -1) {
-      await kirimTeks(`${nomor} tidak ada di blacklist.`);
-      return;
-    }
+    const cfg   = store.getConfig();
+    const idx   = cfg.blacklist.indexOf(nomor);
+    if (idx === -1) { await kirimTeks(`${nomor} tidak ada di blacklist.`); return; }
     cfg.blacklist.splice(idx, 1);
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     await kirimTeks(`<code>${nomor}</code> dihapus dari blacklist.`);
+    return;
   }
 
-  // /setjedabaca pendek|sedang|panjang min max
-  else if (teks.startsWith("/setjedabaca ")) {
+  if (teks.startsWith("/setjedabaca ")) {
     const bagian = teks.replace("/setjedabaca ", "").trim().split(" ");
-    if (bagian.length !== 3) {
-      await kirimTeks("Format: /setjedabaca pendek|sedang|panjang min max\nContoh: /setjedabaca pendek 30 60");
-      return;
-    }
+    if (bagian.length !== 3) { await kirimTeks("Format: /setjedabaca pendek|sedang|panjang min max\nContoh: /setjedabaca pendek 30 60"); return; }
     const tipe = bagian[0].toLowerCase();
-    const min = parseInt(bagian[1]);
-    const max = parseInt(bagian[2]);
-
+    const min  = parseInt(bagian[1]);
+    const max  = parseInt(bagian[2]);
     if (!["pendek", "sedang", "panjang"].includes(tipe) || isNaN(min) || isNaN(max) || min >= max) {
       await kirimTeks("Input tidak valid. Pastikan min < max dan tipe adalah pendek/sedang/panjang.");
       return;
     }
-
-    const cfg = global.loadConfig();
-    if (!cfg.queueSettings.readDelay) cfg.queueSettings.readDelay = {};
-    cfg.queueSettings.readDelay[tipe] = { min, max };
-    simpanConfig(cfg);
-
+    const cfg    = store.getConfig();
     const keyMap = { pendek: "readDelayShort", sedang: "readDelayMedium", panjang: "readDelayLong" };
+    cfg.queueSettings[keyMap[tipe]] = { min, max };
+    await store.saveData(cfg);
     queue.updateSettings({ [keyMap[tipe]]: { min, max } });
-
     await kirimTeks(`Jeda baca <b>${tipe}</b> diset: ${min}-${max} detik.`);
-    logger.info("Bot-Config", `Jeda baca ${tipe}: ${min}-${max}s`);
+    return;
   }
 
-  // /setjedapikir min max
-  else if (teks.startsWith("/setjedapikir ")) {
+  if (teks.startsWith("/setjedapikir ")) {
     const bagian = teks.replace("/setjedapikir ", "").trim().split(" ");
-    if (bagian.length !== 2) {
-      await kirimTeks("Format: /setjedapikir min max\nContoh: /setjedapikir 120 300");
-      return;
-    }
+    if (bagian.length !== 2) { await kirimTeks("Format: /setjedapikir min max\nContoh: /setjedapikir 120 300"); return; }
     const min = parseInt(bagian[0]);
     const max = parseInt(bagian[1]);
-
-    if (isNaN(min) || isNaN(max) || min >= max) {
-      await kirimTeks("Input tidak valid. Pastikan min < max.");
-      return;
-    }
-
-    const cfg = global.loadConfig();
+    if (isNaN(min) || isNaN(max) || min >= max) { await kirimTeks("Input tidak valid. Pastikan min < max."); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.thinkDelayMin = min;
     cfg.queueSettings.thinkDelayMax = max;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ thinkDelayMin: min, thinkDelayMax: max });
-
     await kirimTeks(`Jeda pikir diset: ${min}-${max} detik (${Math.floor(min/60)}-${Math.floor(max/60)} menit).`);
-    logger.info("Bot-Config", `Jeda pikir: ${min}-${max}s`);
+    return;
   }
 
-  // /setjedachat min max
-  else if (teks.startsWith("/setjedachat ")) {
+  if (teks.startsWith("/setjedachat ")) {
     const bagian = teks.replace("/setjedachat ", "").trim().split(" ");
-    if (bagian.length !== 2) {
-      await kirimTeks("Format: /setjedachat min max\nContoh: /setjedachat 120 480");
-      return;
-    }
+    if (bagian.length !== 2) { await kirimTeks("Format: /setjedachat min max\nContoh: /setjedachat 120 480"); return; }
     const min = parseInt(bagian[0]);
     const max = parseInt(bagian[1]);
-
-    if (isNaN(min) || isNaN(max) || min >= max) {
-      await kirimTeks("Input tidak valid. Pastikan min < max.");
-      return;
-    }
-
-    const cfg = global.loadConfig();
+    if (isNaN(min) || isNaN(max) || min >= max) { await kirimTeks("Input tidak valid. Pastikan min < max."); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.switchChatDelayMin = min;
     cfg.queueSettings.switchChatDelayMax = max;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ switchChatDelayMin: min, switchChatDelayMax: max });
-
-    await kirimTeks(`Jeda pindah chat diset: ${min}-${max} detik (${Math.floor(min/60)}-${Math.floor(max/60)} menit).`);
-    logger.info("Bot-Config", `Jeda pindah chat: ${min}-${max}s`);
+    await kirimTeks(`Jeda pindah chat diset: ${min}-${max} detik.`);
+    return;
   }
 
-  // /setjedaketik lambat|normal|cepat
-  else if (teks.startsWith("/setjedaketik ")) {
+  if (teks.startsWith("/setjedaketik ")) {
     const nilai = teks.replace("/setjedaketik ", "").trim();
-    if (!["lambat", "normal", "cepat"].includes(nilai)) {
-      await kirimTeks("Pilihan: lambat, normal, cepat");
-      return;
-    }
-    const cfg = global.loadConfig();
+    if (!["lambat", "normal", "cepat"].includes(nilai)) { await kirimTeks("Pilihan: lambat, normal, cepat"); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.typingSpeed = nilai;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ typingSpeed: nilai });
     await kirimTeks(`Kecepatan mengetik diset ke <b>${nilai}</b>.`);
+    return;
   }
 
-  // /setrandom on|off
-  else if (teks.startsWith("/setrandom ")) {
+  if (teks.startsWith("/setrandom ")) {
     const nilai = teks.replace("/setrandom ", "").trim();
-    if (!["on", "off"].includes(nilai)) {
-      await kirimTeks("Pilihan: on atau off");
-      return;
-    }
-    const cfg = global.loadConfig();
+    if (!["on", "off"].includes(nilai)) { await kirimTeks("Pilihan: on atau off"); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.randomDelay = nilai === "on";
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ randomDelay: nilai === "on" });
     await kirimTeks(`Jeda random: <b>${nilai.toUpperCase()}</b>.`);
+    return;
   }
 
-  // /setminjeda detik
-  else if (teks.startsWith("/setminjeda ")) {
+  if (teks.startsWith("/setminjeda ")) {
     const nilai = parseInt(teks.replace("/setminjeda ", "").trim());
-    if (isNaN(nilai) || nilai < 1) {
-      await kirimTeks("Masukkan angka detik yang valid (minimal 1).");
-      return;
-    }
-    const cfg = global.loadConfig();
+    if (isNaN(nilai) || nilai < 1) { await kirimTeks("Masukkan angka detik yang valid (minimal 1)."); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.minDelay = nilai;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ minDelay: nilai });
     await kirimTeks(`Minimum jeda ketik diset ke <b>${nilai} detik</b>.`);
+    return;
   }
 
-  // /setmaxjeda detik
-  else if (teks.startsWith("/setmaxjeda ")) {
+  if (teks.startsWith("/setmaxjeda ")) {
     const nilai = parseInt(teks.replace("/setmaxjeda ", "").trim());
-    if (isNaN(nilai) || nilai < 1) {
-      await kirimTeks("Masukkan angka detik yang valid.");
-      return;
-    }
-    const cfg = global.loadConfig();
+    if (isNaN(nilai) || nilai < 1) { await kirimTeks("Masukkan angka detik yang valid."); return; }
+    const cfg = store.getConfig();
     cfg.queueSettings.maxDelay = nilai;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     queue.updateSettings({ maxDelay: nilai });
     await kirimTeks(`Maximum jeda ketik diset ke <b>${nilai} detik</b>.`);
+    return;
   }
 
-  // /aktifkan namaWA
-  else if (teks.startsWith("/aktifkan ")) {
+  if (teks.startsWith("/aktifkan ")) {
     const namaWa = teks.replace("/aktifkan ", "").trim();
-    const cfg = global.loadConfig();
+    const cfg    = store.getConfig();
     cfg.activeAccounts[namaWa] = true;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     await kirimTeks(`<b>${namaWa}</b> diaktifkan.`);
+    return;
   }
 
-  // /nonaktifkan namaWA
-  else if (teks.startsWith("/nonaktifkan ")) {
+  if (teks.startsWith("/nonaktifkan ")) {
     const namaWa = teks.replace("/nonaktifkan ", "").trim();
-    const cfg = global.loadConfig();
+    const cfg    = store.getConfig();
     cfg.activeAccounts[namaWa] = false;
-    simpanConfig(cfg);
+    await store.saveData(cfg);
     await kirimTeks(`<b>${namaWa}</b> dinonaktifkan.`);
+    return;
   }
 
-  // /pengaturan
-  else if (teks === "/pengaturan") {
-    const cfg = global.loadConfig();
-    const qs = cfg.queueSettings;
-    const rd = qs.readDelay || {};
-
+  if (teks === "/pengaturan") {
+    const cfg = store.getConfig();
+    const qs  = cfg.queueSettings;
     await kirimTeks(
       `<b>Pengaturan Saat Ini</b>\n\n` +
       `<b>Jeda Baca:</b>\n` +
-      `- Pendek: ${qs.readDelayShort?.min || rd.pendek?.min || 30}-${qs.readDelayShort?.max || rd.pendek?.max || 60} detik\n` +
-      `- Sedang: ${qs.readDelayMedium?.min || rd.sedang?.min || 60}-${qs.readDelayMedium?.max || rd.sedang?.max || 180} detik\n` +
-      `- Panjang: ${qs.readDelayLong?.min || rd.panjang?.min || 180}-${qs.readDelayLong?.max || rd.panjang?.max || 420} detik\n\n` +
+      `- Pendek: ${qs.readDelayShort?.min || 30}-${qs.readDelayShort?.max || 60} detik\n` +
+      `- Sedang: ${qs.readDelayMedium?.min || 60}-${qs.readDelayMedium?.max || 180} detik\n` +
+      `- Panjang: ${qs.readDelayLong?.min || 180}-${qs.readDelayLong?.max || 420} detik\n\n` +
       `<b>Jeda Pikir:</b>\n` +
-      `- Min: ${qs.thinkDelayMin || 120} detik (${Math.floor((qs.thinkDelayMin || 120)/60)} menit)\n` +
-      `- Max: ${qs.thinkDelayMax || 300} detik (${Math.floor((qs.thinkDelayMax || 300)/60)} menit)\n\n` +
+      `- Min: ${qs.thinkDelayMin || 120} detik\n` +
+      `- Max: ${qs.thinkDelayMax || 300} detik\n\n` +
       `<b>Jeda Pindah Chat:</b>\n` +
       `- Min: ${qs.switchChatDelayMin || 120} detik\n` +
       `- Max: ${qs.switchChatDelayMax || 480} detik\n\n` +
@@ -287,20 +221,17 @@ async function prosesPerintah(msg) {
       `- Max: ${qs.maxDelay || 10} detik\n\n` +
       `<b>Blacklist:</b> ${(cfg.blacklist || []).length} nomor\n\n` +
       `<b>Akun WA:</b>\n` +
-      Object.entries(cfg.activeAccounts || {})
-        .map(([id, aktif]) => `- ${id}: ${aktif ? "Aktif" : "Nonaktif"}`)
-        .join("\n") || "Tidak ada"
+      (Object.entries(cfg.activeAccounts || {}).map(([id, aktif]) => `- ${id}: ${aktif ? "Aktif" : "Nonaktif"}`).join("\n") || "Tidak ada")
     );
+    return;
   }
 
-  // /healthcheck
-  else if (teks === "/healthcheck") {
+  if (teks === "/healthcheck") {
     const waStatus = waManager.getStatus();
-    const qStatus = queue.getStatus();
-    const daftar = Object.entries(waStatus)
-      .map(([id, s]) => `- ${id}: ${s.status === "connected" ? "Terhubung" : "Terputus"} ${s.jid?.replace(/@.*/, "") || ""}`)
+    const qStatus  = queue.getStatus();
+    const daftar   = Object.entries(waStatus)
+      .map(([id, s]) => `- ${id}: ${s.status === "connected" ? "Terhubung ✅" : "Terputus ❌"} ${s.jid?.replace(/@.*/, "") || ""}`)
       .join("\n") || "Tidak ada WA";
-
     await kirimTeks(
       `<b>Health Check</b>\n\n` +
       `<b>WA Accounts:</b>\n${daftar}\n\n` +
@@ -308,6 +239,7 @@ async function prosesPerintah(msg) {
       `- Pesan menunggu: ${qStatus.panjangAntrian}\n` +
       `- Sedang proses: ${qStatus.sedangProses ? "Ya" : "Tidak"}`
     );
+    return;
   }
 }
 
