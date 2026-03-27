@@ -8,10 +8,14 @@ const store     = require("./store");
 
 const CHATLOG_FILE = "./auth_sessions/chatlog.json";
 
-// ===== TOKEN & CHAT ID dibaca dari store (bukan hardcode dari file) =====
-function getToken()  { return store.getConfig().botBridgeToken; }
-function getChatId() { return store.getConfig().telegramChatId; }
-function getAdminId(){ return store.getConfig().adminTelegramId; }
+// ===== TOKEN & CHAT ID dibaca dari store =====
+// botBridgeToken sudah tidak ada — fallback ke token pool_3 (Wa Bot 3)
+function getToken() {
+  const cfg = store.getConfig();
+  return cfg.botBridgeToken || cfg.botPool?.find(p => p.id === "pool_3")?.token || "";
+}
+function getChatId()  { return store.getConfig().telegramChatId; }
+function getAdminId() { return store.getConfig().adminTelegramId; }
 function getTelegramApi() { return `https://api.telegram.org/bot${getToken()}`; }
 
 // ===== GENERATE ID HURUF =====
