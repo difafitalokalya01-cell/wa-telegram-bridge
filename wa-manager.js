@@ -87,21 +87,41 @@ function persistContactStore(waId) {
 }
 
 // ===== RESOLVE LID KE NOMOR ASLI =====
-async function resolveLid(sock, waId, jid, pushName) {
+async function resolveLid(sock, waId, jid, pushName, msg) {
   if (!jid) return jid;
   const nomor = jid.replace(/@.*/, "");
 
-  // Cek apakah sudah nomor normal (7-15 digit)
+  // Sudah nomor normal — tidak perlu resolve
   if (/^\d{7,15}$/.test(nomor)) return jid;
 
-  // 1. Cek contact store
+  // 1. Cek contact store (hasil resolve sebelumnya)
   if (contactStore[waId]?.[jid]) {
     const resolved = `${contactStore[waId][jid]}@s.whatsapp.net`;
     logger.info("WA-Manager", `LID resolved via store: ${jid} → ${resolved}`);
     return resolved;
   }
 
-  // 2. Cek chatlog — cari entry waId + nama sama
+  // 2. Coba ekstrak dari field pesan Baileys 6.7.x
+  // Baileys kadang menyimpan nomor asli di verifiedBizName, notify, atau field lain
+  if (msg) {
+    const kandidatNomor = [
+      msg.key?.participant,
+      msg.participant,
+      msg.verifiedBizName,
+    ].filter(Boolean);
+
+    for (const kandidat of kandidatNomor) {
+      const n = kandidat.replace(/@.*/, "").replace(/[^0-9]/g, "");
+      if (/^\d{7,15}$/.test(n)) {
+        const resolved = `${n}@s.whatsapp.net`;
+        saveContact(waId, jid, n);
+        logger.info("WA-Manager", `LID resolved via msg field: ${jid} → ${resolved}`);
+        return resolved;
+      }
+    }
+  }
+
+  // 3. Cek chatlog — cari entry dengan nama yang sama
   try {
     const { getChatLog } = require("./bot-bridge");
     const chatLog = getChatLog();
@@ -118,19 +138,33 @@ async function resolveLid(sock, waId, jid, pushName) {
     }
   } catch (e) {}
 
-  // 3. Coba via onWhatsApp
+  // 4. Coba fetch via getBusinessProfile (untuk WA Business)
+  try {
+    const profile = await sock.getBusinessProfile(jid);
+    if (profile?.wid) {
+      const resolved = normalizeJid(profile.wid);
+      const n = resolved.replace(/@.*/, "");
+      if (/^\d{7,15}$/.test(n)) {
+        saveContact(waId, jid, n);
+        logger.info("WA-Manager", `LID resolved via business profile: ${jid} → ${resolved}`);
+        return resolved;
+      }
+    }
+  } catch (e) {}
+
+  // 5. Coba via onWhatsApp sebagai last resort
   try {
     const results = await sock.onWhatsApp(nomor);
     if (results?.[0]?.jid) {
       const resolved = normalizeJid(results[0].jid);
-      const nomorResolved = resolved.replace(/@.*/, "");
-      saveContact(waId, jid, nomorResolved);
+      const n = resolved.replace(/@.*/, "");
+      saveContact(waId, jid, n);
       logger.info("WA-Manager", `LID resolved via onWhatsApp: ${jid} → ${resolved}`);
       return resolved;
     }
   } catch (e) {}
 
-  logger.warn("WA-Manager", `Tidak bisa resolve JID: ${jid}`);
+  logger.warn("WA-Manager", `Tidak bisa resolve JID: ${jid} (pushName: ${pushName})`);
   return jid;
 }
 
@@ -204,21 +238,38 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // ===== TANGKAP UPDATE KONTAK =====
+  // ===== TANGKAP UPDATE KONTAK — simpan mapping LID =====
   sock.ev.on("contacts.update", (updates) => {
     for (const update of updates) {
-      if (update.id && (update.notify || update.name)) {
-        const nomor = normalizeJid(update.id)?.replace(/@.*/, "");
-        if (nomor) saveContact(waId, update.id, nomor);
+      if (!update.id) continue;
+      const nomorId = update.id.replace(/@.*/, "");
+      // Kalau id adalah nomor normal, simpan mapping dari lid ke nomor
+      if (/^\d{7,15}$/.test(nomorId)) {
+        if (update.lid) saveContact(waId, update.lid, nomorId);
+        saveContact(waId, update.id, nomorId);
       }
     }
   });
 
   sock.ev.on("contacts.upsert", (contacts) => {
     for (const contact of contacts) {
-      if (contact.id && (contact.notify || contact.name)) {
-        const nomor = normalizeJid(contact.id)?.replace(/@.*/, "");
-        if (nomor) saveContact(waId, contact.id, nomor);
+      if (!contact.id) continue;
+      const nomorId = contact.id.replace(/@.*/, "");
+      if (/^\d{7,15}$/.test(nomorId)) {
+        // Simpan mapping LID → nomor kalau ada
+        if (contact.lid) saveContact(waId, contact.lid, nomorId);
+        saveContact(waId, contact.id, nomorId);
+      }
+    }
+  });
+
+  // ===== CHATS UPSERT — tangkap mapping dari riwayat chat =====
+  sock.ev.on("chats.upsert", (chats) => {
+    for (const chat of chats) {
+      if (!chat.id) continue;
+      const nomorId = chat.id.replace(/@.*/, "");
+      if (/^\d{7,15}$/.test(nomorId) && chat.id.endsWith("@s.whatsapp.net")) {
+        if (chat.lid) saveContact(waId, chat.lid, nomorId);
       }
     }
   });
@@ -317,7 +368,7 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         // ===== NORMALISASI & RESOLVE JID =====
         const jidNorm    = normalizeJid(remoteJid);
         const pushNameRaw = msg.pushName || "";
-        const jidFinal   = await resolveLid(sock, waId, jidNorm, pushNameRaw);
+        const jidFinal   = await resolveLid(sock, waId, jidNorm, pushNameRaw, msg);
 
         // Simpan mapping kontak
         const nomorFinal = jidFinal.replace(/@.*/, "");
