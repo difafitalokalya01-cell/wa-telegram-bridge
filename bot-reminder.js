@@ -104,7 +104,10 @@ async function prosesPerintah(msg) {
       `🚨 Pengingat 3: ${rs.reminder3} menit\n\n` +
       `<b>Perintah:</b>\n` +
       `/setreminder 30 60 120 - Ubah waktu pengingat\n` +
-      `/ceksekarang - Cek pengingat sekarang`
+      `/ceksekarang - Cek pengingat sekarang\n\n` +
+      `<b>Balas langsung dari sini:</b>\n` +
+      `/[id] pesan - Balas kandidat\n` +
+      `/lihat [id] - Detail kandidat`
     );
     return;
   }
@@ -136,6 +139,80 @@ async function prosesPerintah(msg) {
     await cekPengingat();
     await kirimTeks("✅ Pengecekan selesai.");
     return;
+  }
+
+  // ===== /lihat A — lihat detail kandidat =====
+  if (teks.startsWith("/lihat ")) {
+    const { getChatLog } = require("./bot-bridge");
+    const id   = teks.replace("/lihat ", "").trim().toUpperCase();
+    const chat = getChatLog()[id];
+    if (!chat) { await kirimTeks(`❌ Chat [${id}] tidak ditemukan.`); return; }
+    const statusMap = {
+      baru: "🆕 Baru", perlu_dibalas: "🔔 Perlu dibalas",
+      menunggu: "⏳ Menunggu reply", selesai: "✅ Selesai", tidak_aktif: "❌ Tidak aktif",
+    };
+    await kirimTeks(
+      `<b>👤 [${id}] ${chat.nama}</b>\n` +
+      `📞 ${chat.jid?.replace(/@.*/, "")}\n` +
+      `📱 ${chat.waId}\n` +
+      `Status: ${statusMap[chat.status] || chat.status}\n\n` +
+      `💬 "${chat.pesanTerakhir?.slice(0, 100) || ""}"\n\n` +
+      `Balas: /${id} pesanmu`
+    );
+    return;
+  }
+
+  // ===== BALAS: /A pesanmu =====
+  const matchBalas = teks.match(/^\/([A-Za-z]+)\s+(.+)$/s);
+  if (matchBalas) {
+    const perintahKhusus = ["setreminder", "ceksekarang", "start", "lihat"];
+    const idRaw   = matchBalas[1].toLowerCase();
+    const idUpper = matchBalas[1].toUpperCase();
+    const pesan   = matchBalas[2].trim();
+
+    if (perintahKhusus.includes(idRaw)) return;
+
+    const { getChatLog, updateChatLog } = require("./bot-bridge");
+    const chatLog = getChatLog();
+    const chat    = chatLog[idUpper];
+
+    if (!chat) { await kirimTeks(`❌ Chat [${idUpper}] tidak ditemukan.`); return; }
+
+    const waManager = require("./wa-manager");
+    const queue     = require("./queue");
+
+    const aktif = await waManager.cekNomorAktif(chat.waId, chat.jid);
+    if (!aktif) {
+      updateChatLog(idUpper, { status: "tidak_aktif" });
+      await kirimTeks(
+        `❌ Nomor ${chat.jid.replace(/@.*/, "")} tidak aktif di WhatsApp.`
+      );
+      return;
+    }
+
+    queue.tambahKeAntrian(chat.waId, chat.jid, pesan, null, chat.panjangPesan || 0);
+    updateChatLog(idUpper, { status: "menunggu", waktuBalas: Date.now() });
+    // Reset reminder karena sudah dibalas
+    updateChatLog(idUpper, {
+      reminder1Terkirim: false,
+      reminder2Terkirim: false,
+      reminder3Terkirim: false,
+    });
+    await kirimTeks(`✅ Pesan ke <b>${chat.nama}</b> [${idUpper}] masuk antrian.`);
+
+    // Notif ke bot slot agar tidak membingungkan
+    try {
+      const slot = store.getSlotByWaId(chat.waId);
+      if (slot) {
+        const { kirimKeSlot } = require("./bot-pool");
+        await kirimKeSlot(
+          slot.token,
+          store.getConfig().adminTelegramId,
+          `📤 <b>[${idUpper}] ${chat.nama}</b> dibalas via Bot Pengingat\n` +
+          `💬 "${pesan.slice(0, 80)}${pesan.length > 80 ? "..." : ""}"`
+        );
+      }
+    } catch (e) {}
   }
 }
 

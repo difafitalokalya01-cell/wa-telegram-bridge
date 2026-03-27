@@ -167,12 +167,24 @@ async function prosesPerintah(msg) {
   }
 
   if (teks === "/hapuswa") {
-    const status = waManager.getStatus();
-    const daftar = Object.keys(status);
-    if (daftar.length === 0) { await kirimTeks("Tidak ada akun WA yang terhubung."); return; }
-    const listTeks = daftar
-      .map((id, i) => `${i + 1}. ${id} - ${status[id].status === "connected" ? "Terhubung" : "Terputus"}`)
+    const status  = waManager.getStatus();
+    const cfg     = store.getConfig();
+    // Gabungkan dari waManager (connected) dan data.json (semua akun)
+    const semuaWa = new Set([
+      ...Object.keys(status),
+      ...Object.keys(cfg.waAccounts || {}),
+    ]);
+
+    if (semuaWa.size === 0) { await kirimTeks("Tidak ada akun WA yang terdaftar."); return; }
+
+    const listTeks = [...semuaWa]
+      .map((id, i) => {
+        const s = status[id];
+        const koneksi = s ? (s.status === "connected" ? "Terhubung" : "Terputus") : "Offline";
+        return `${i + 1}. ${id} - ${koneksi}`;
+      })
       .join("\n");
+
     await kirimTeks(
       `<b>Hapus Akun WA</b>\n\n` +
       `Daftar akun:\n${listTeks}\n\n` +
@@ -184,16 +196,33 @@ async function prosesPerintah(msg) {
 
   if (teks.startsWith("/konfirmhapus ")) {
     const namaWa = teks.replace("/konfirmhapus ", "").trim();
+    const cfg    = store.getConfig();
+
+    // Cek apakah ada di waAccounts atau waManager
+    const adaDiConfig  = cfg.waAccounts?.[namaWa] !== undefined;
+    const adaDiManager = waManager.getStatus()[namaWa] !== undefined;
+
+    if (!adaDiConfig && !adaDiManager) {
+      await kirimTeks(`❌ Akun <b>${namaWa}</b> tidak ditemukan.`);
+      return;
+    }
+
     try {
-      await waManager.disconnectWA(namaWa);
-      const cfg = store.getConfig();
+      // Disconnect dari waManager kalau masih ada
+      if (adaDiManager) {
+        try { await waManager.disconnectWA(namaWa); } catch (e) {}
+      }
+      // Hapus dari config
       delete cfg.waAccounts[namaWa];
       delete cfg.activeAccounts[namaWa];
+      // Kosongkan slot pool kalau ada
+      const slot = store.getSlotByWaId(namaWa);
+      if (slot) await store.kosongkanSlot(slot.id);
       await store.saveData(cfg);
-      await kirimTeks(`<b>${namaWa}</b> berhasil dihapus.`);
+      await kirimTeks(`✅ <b>${namaWa}</b> berhasil dihapus.`);
       logger.info("Bot-WA", `${namaWa} berhasil dihapus`);
     } catch (err) {
-      await kirimTeks(`Gagal hapus ${namaWa}: ${err.message}`);
+      await kirimTeks(`❌ Gagal hapus ${namaWa}: ${err.message}`);
     }
     return;
   }
