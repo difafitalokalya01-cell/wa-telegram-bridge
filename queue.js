@@ -31,11 +31,19 @@ let settings = {
 // Hanya load pesan yang tidak lebih dari 10 menit — pesan lama dibuang
 if (fs.existsSync(QUEUE_FILE)) {
   try {
-    const raw      = JSON.parse(fs.readFileSync(QUEUE_FILE, "utf-8"));
+    const raw        = JSON.parse(fs.readFileSync(QUEUE_FILE, "utf-8"));
     const batasWaktu = Date.now() - 10 * 60 * 1000; // 10 menit
-    queue = raw.filter((item) => item.waktu && item.waktu > batasWaktu);
+    queue = raw.filter((item) => {
+      // Buang pesan lama
+      if (!item.waktu || item.waktu <= batasWaktu) return false;
+      // Buang item yang punya media tapi bukan teks (sticker, dll)
+      if (item.media && !item.pesan && !item.media.image && !item.media.video && !item.media.document && !item.media.audio) return false;
+      // Buang item tanpa teks dan tanpa media valid
+      if (!item.pesan && !item.media) return false;
+      return true;
+    });
     const dibuang = raw.length - queue.length;
-    logger.info("Queue", `Loaded ${queue.length} pesan dari backup (${dibuang} pesan lama dibuang)`);
+    logger.info("Queue", `Loaded ${queue.length} pesan dari backup (${dibuang} pesan lama/invalid dibuang)`);
   } catch (e) {
     queue = [];
   }

@@ -417,6 +417,12 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         const mediaTypes = ["imageMessage", "videoMessage", "documentMessage", "audioMessage"];
         const mediaType  = mediaTypes.find((t) => msg.message?.[t]);
 
+        // ===== ABAIKAN STICKER =====
+        if (msg.message?.stickerMessage) {
+          logger.info("WA-Manager", `Sticker dari ${jidFinal} diabaikan`);
+          continue;
+        }
+
         if (mediaType) {
           // ===== PESAN MEDIA =====
           try {
