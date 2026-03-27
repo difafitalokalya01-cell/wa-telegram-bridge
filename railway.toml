@@ -1,0 +1,8 @@
+[deploy]
+# Rolling deploy — bot lama tetap jalan sampai bot baru siap
+# Minimalisasi downtime saat deploy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[build]
+builder = "NIXPACKS"

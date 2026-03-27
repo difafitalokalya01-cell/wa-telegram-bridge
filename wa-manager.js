@@ -337,17 +337,54 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     }
   });
 
-  // ===== HISTORY SYNC =====
+  // ===== HISTORY SYNC — tangkap pesan yang terlewat saat bot mati =====
   sock.ev.on("messaging-history.set", async ({ chats, isLatest }) => {
     if (!isLatest) return;
     try {
-      const unreadChats = chats.filter((c) => c.unreadCount > 0 && !shouldIgnoreJid(c.id));
-      if (unreadChats.length > 0 && onUnreadFound) {
-        logger.info("WA-Manager", `${waId}: ${unreadChats.length} unread dari history sync`);
-        await onUnreadFound(waId, unreadChats.map((c) => ({
-          jid:         normalizeJid(c.id),
+      const unreadChats = chats.filter((c) => {
+        if (!c.unreadCount || c.unreadCount <= 0) return false;
+        if (shouldIgnoreJid(c.id)) return false;
+        return true;
+      });
+
+      if (unreadChats.length === 0) return;
+
+      logger.info("WA-Manager", `${waId}: ${unreadChats.length} chat unread saat reconnect`);
+
+      // Coba fetch pesan aktual dari setiap chat unread
+      const unreadDenganPesan = [];
+      for (const chat of unreadChats) {
+        const jid  = normalizeJid(chat.id);
+        const nama = chat.name || chat.notify || jid.replace(/@.*/, "");
+        try {
+          // Coba ambil pesan terbaru dari chat ini
+          const msgs = await sock.fetchMessages({ id: jid, count: chat.unreadCount });
+          if (msgs?.messages?.length > 0) {
+            // Proses tiap pesan yang berhasil difetch
+            for (const msg of msgs.messages) {
+              if (msg.key.fromMe) continue;
+              const pesan = msg.message?.conversation ||
+                            msg.message?.extendedTextMessage?.text || null;
+              if (pesan) {
+                unreadDenganPesan.push({ jid, nama, pesan, unreadCount: chat.unreadCount });
+                break; // Ambil pesan terakhir saja
+              }
+            }
+          } else {
+            unreadDenganPesan.push({ jid, nama, pesan: null, unreadCount: chat.unreadCount });
+          }
+        } catch (e) {
+          // fetchMessages tidak selalu tersedia — fallback ke notif saja
+          unreadDenganPesan.push({ jid, nama, pesan: null, unreadCount: chat.unreadCount });
+        }
+      }
+
+      if (onUnreadFound) {
+        await onUnreadFound(waId, unreadDenganPesan.map((c) => ({
+          jid:         c.jid,
           unreadCount: c.unreadCount,
-          name:        c.name || c.notify || c.id.replace(/@.*/, ""),
+          name:        c.nama,
+          pesanTerakhir: c.pesan,
         })));
       }
     } catch (err) {

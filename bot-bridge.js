@@ -451,25 +451,65 @@ function setupCallbacks() {
 
     onUnreadFound: async (waId, unreadChats) => {
       const total = unreadChats.reduce((sum, c) => sum + c.unreadCount, 0);
-      await kirimTeks(
-        `<b>${waId} terhubung!</b>\n\n` +
-        `Meneruskan <b>${total} pesan belum dibaca</b> dari ${unreadChats.length} chat...`
-      );
+      const store = require("./store");
+      const slot  = store.getSlotByWaId(waId);
 
+      // Kirim ringkasan dulu
+      const ringkasanTeks =
+        `⚡ <b>${waId} reconnect!</b>\n\n` +
+        `Ada <b>${total} pesan terlewat</b> dari ${unreadChats.length} kontak:\n` +
+        unreadChats.slice(0, 5).map((c) =>
+          `• ${c.name || c.jid.replace(/@.*/, "")} (${c.unreadCount} pesan)`
+        ).join("\n") +
+        (unreadChats.length > 5 ? `\n...dan ${unreadChats.length - 5} kontak lain` : "");
+
+      if (slot) {
+        const botPool = require("./bot-pool");
+        await botPool.kirimKeSlot(slot.token, store.getConfig().adminTelegramId, ringkasanTeks);
+      } else {
+        await kirimTeks(ringkasanTeks);
+      }
+
+      // Forward tiap chat dengan detail
       for (const chat of unreadChats) {
-        const id = getOrCreateId(waId, chat.jid, chat.name);
-        chatLog[id].status     = "perlu_dibalas";
+        const jidNorm = chat.jid;
+        const id      = getOrCreateId(waId, jidNorm, chat.name);
+
+        // Update status hanya kalau belum ada status aktif
+        if (!["menunggu", "perlu_dibalas"].includes(chatLog[id].status)) {
+          chatLog[id].status = "perlu_dibalas";
+        }
         chatLog[id].waktuPesan = Date.now();
+        if (chat.pesanTerakhir) chatLog[id].pesanTerakhir = chat.pesanTerakhir;
+        // Reset reminder
+        chatLog[id].reminder1Terkirim = false;
+        chatLog[id].reminder2Terkirim = false;
+        chatLog[id].reminder3Terkirim = false;
         await saveChatLog();
 
-        await kirimTeks(
-          `<b>[${id}] Unread - ${waId}</b>\n` +
-          `👤 <b>${chat.name}</b>\n` +
-          `📞 <b>${chat.jid.replace(/@.*/, "")}</b>\n` +
-          `📨 ${chat.unreadCount} pesan belum dibaca\n\n` +
-          `<i>Balas: /${id} pesanmu</i>`
-        );
-        await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 2000) + 3000));
+        const isLid       = isLidJid(jidNorm);
+        const nomorTampil = jidNorm.replace(/@.*/, "");
+        const pesanInfo   = chat.pesanTerakhir
+          ? `💬 "${chat.pesanTerakhir.slice(0, 80)}"`
+          : `📨 ${chat.unreadCount} pesan belum dibaca (isi tidak dapat diambil)`;
+        const lidInfo = isLid
+          ? `\n⚠️ <i>Nomor belum terdeteksi</i>\n<i>Fix: /fixjid ${id} 628xxx</i>`
+          : `\n<i>Balas: /${id} pesanmu</i>`;
+
+        const notifTeks =
+          `<b>[${id}] Terlewat - ${waId}</b>\n` +
+          `👤 <b>${chat.name || nomorTampil}</b>\n` +
+          `📞 <b>${nomorTampil}</b>\n\n` +
+          `${pesanInfo}${lidInfo}`;
+
+        if (slot) {
+          const botPool = require("./bot-pool");
+          await botPool.kirimKeSlot(slot.token, store.getConfig().adminTelegramId, notifTeks);
+        } else {
+          await kirimTeks(notifTeks);
+        }
+
+        await new Promise((r) => setTimeout(r, 2000));
       }
     },
   });
