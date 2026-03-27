@@ -139,13 +139,19 @@ app.listen(PORT, async () => {
   // Arsip chatlog lama
   try { botBridge.arsipChatLogLama(); } catch (e) {}
 
-  // Reconnect semua WA
+  // Reconnect semua WA — skip yang sudah logout permanen
   const accounts = config.waAccounts || {};
   for (const waId of Object.keys(accounts)) {
-    if (config.activeAccounts?.[waId] === false) continue;
+    if (config.activeAccounts?.[waId] === false) {
+      logger.info("Index", `Skip ${waId} — dinonaktifkan`);
+      continue;
+    }
     logger.info("Index", `Reconnect ${waId}...`);
-    try { await waManager.connectWA(waId); }
-    catch (err) { logger.error("Index", `Gagal reconnect ${waId}: ${err.message}`); }
+    try {
+      await waManager.connectWA(waId);
+    } catch (err) {
+      logger.error("Index", `Gagal reconnect ${waId}: ${err.message}`);
+    }
   }
 
   botReminder.mulaiPengingat();

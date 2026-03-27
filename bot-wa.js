@@ -59,10 +59,17 @@ function setupQRCallback() {
       );
     },
     onConnected: async (waId, jid) => {
-      const slot = store.getSlotByWaId(waId);
+      const slot  = store.getSlotByWaId(waId);
+      const nomor = jid.replace(/@.*/, "");
+      // Simpan nomor ke waAccounts supaya bisa ditampilkan saat terputus
+      const cfg = store.getConfig();
+      if (cfg.waAccounts?.[waId]) {
+        cfg.waAccounts[waId].nomor = nomor;
+        await store.saveData(cfg);
+      }
       await kirimTeks(
         `<b>${waId} terhubung!</b>\n` +
-        `Nomor: <code>${jid.replace(/@.*/, "")}</code>\n` +
+        `Nomor: <code>${nomor}</code>\n` +
         `Slot: ${slot ? `${slot.nama} (${slot.username})` : "Belum di-assign ke slot"}`
       );
     },
@@ -240,14 +247,18 @@ async function prosesPerintah(msg) {
 
     const listTeks = [...semuaWa]
       .map((id) => {
-        const s      = status[id];
-        const koneksi= s ? (s.status === "connected" ? "Terhubung ✅" : "Terputus ❌") : "Offline ❌";
-        const nomor  = s?.jid?.replace(/@.*/, "") || "-";
+        const s        = status[id];
+        const koneksi  = s ? (s.status === "connected" ? "Terhubung ✅" : "Terputus ❌") : "Offline ❌";
+        const nomorAktif = s?.jid?.replace(/@.*/, "");
+        const nomorTerakhir = cfg.waAccounts?.[id]?.nomor;
+        const tampilNomor = nomorAktif || nomorTerakhir || "-";
+        const slot     = store.getSlotByWaId(id);
         return (
           `<b>${id}</b>\n` +
           `Status: ${koneksi}\n` +
-          `Nomor: <code>${nomor}</code>\n` +
-          (s?.status !== "connected" ? `Pairing ulang: /pairingulang ${id}` : "")
+          `Nomor: <code>${tampilNomor}</code>${!nomorAktif && nomorTerakhir ? " <i>(terakhir)</i>" : ""}\n` +
+          `Slot: ${slot ? slot.nama : "Belum di-assign"}\n` +
+          (s?.status !== "connected" ? `🔄 /pairingulang ${id}` : "")
         );
       })
       .join("\n\n");
@@ -339,7 +350,10 @@ async function mulaiKoneksi(namaWa, usePairingCode, nomor) {
   try {
     await waManager.connectWA(namaWa, usePairingCode, nomor);
     const cfg = store.getConfig();
-    cfg.waAccounts[namaWa]     = { addedAt: new Date().toISOString() };
+    cfg.waAccounts[namaWa] = {
+      addedAt: new Date().toISOString(),
+      nomor: nomor || null, // simpan nomor kalau pakai pairing code
+    };
     cfg.activeAccounts[namaWa] = true;
     await store.saveData(cfg);
     logger.info("Bot-WA", `${namaWa} mulai proses koneksi`);

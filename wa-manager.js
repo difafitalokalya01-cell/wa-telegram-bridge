@@ -331,6 +331,16 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         logger.info("WA-Manager", `${waId} reconnect dalam ${Math.round(delay/1000)}s (ke-${currentRetry + 1}/${MAX_RETRY})`);
         setTimeout(() => connectWA(waId), delay);
       } else {
+        // Logout permanen — tandai nonaktif agar tidak di-reconnect saat restart
+        try {
+          const store = require("./store");
+          const cfg   = store.getConfig();
+          if (cfg.activeAccounts) {
+            cfg.activeAccounts[waId] = false;
+            await store.saveData(cfg);
+            logger.info("WA-Manager", `${waId} ditandai nonaktif (logout permanen)`);
+          }
+        } catch (e) {}
         delete instances[waId];
         delete retryCount[waId];
       }
