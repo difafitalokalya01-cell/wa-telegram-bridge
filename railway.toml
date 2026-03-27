@@ -1,8 +1,9 @@
-[deploy]
-# Rolling deploy — bot lama tetap jalan sampai bot baru siap
-# Minimalisasi downtime saat deploy
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
-
 [build]
 builder = "NIXPACKS"
+
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x"]
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
