@@ -28,10 +28,14 @@ let settings = {
 };
 
 // Load antrian dari backup
+// Hanya load pesan yang tidak lebih dari 10 menit — pesan lama dibuang
 if (fs.existsSync(QUEUE_FILE)) {
   try {
-    queue = JSON.parse(fs.readFileSync(QUEUE_FILE, "utf-8"));
-    logger.info("Queue", `Loaded ${queue.length} pesan dari backup`);
+    const raw      = JSON.parse(fs.readFileSync(QUEUE_FILE, "utf-8"));
+    const batasWaktu = Date.now() - 10 * 60 * 1000; // 10 menit
+    queue = raw.filter((item) => item.waktu && item.waktu > batasWaktu);
+    const dibuang = raw.length - queue.length;
+    logger.info("Queue", `Loaded ${queue.length} pesan dari backup (${dibuang} pesan lama dibuang)`);
   } catch (e) {
     queue = [];
   }

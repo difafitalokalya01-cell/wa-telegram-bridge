@@ -20,6 +20,21 @@ const retryCount = {};
 // Store kontak manual per waId: { jid: { name, nomor } }
 const contactStore = {};
 
+// ===== DEDUPLICATION — cegah pesan diproses 2x =====
+const processedMsgIds = new Map(); // msgId → timestamp
+const MSG_DEDUP_TTL   = 5 * 60 * 1000; // 5 menit
+
+function isDuplicateMsg(msgId) {
+  const now = Date.now();
+  // Bersihkan entries lama
+  for (const [id, ts] of processedMsgIds.entries()) {
+    if (now - ts > MSG_DEDUP_TTL) processedMsgIds.delete(id);
+  }
+  if (processedMsgIds.has(msgId)) return true;
+  processedMsgIds.set(msgId, now);
+  return false;
+}
+
 const MAX_RETRY  = 10;
 const BASE_DELAY = 5000;
 const MAX_DELAY  = 600000;
@@ -91,8 +106,8 @@ async function resolveLid(sock, waId, jid, pushName, msg) {
   if (!jid) return jid;
   const nomor = jid.replace(/@.*/, "");
 
-  // Sudah nomor normal — tidak perlu resolve
-  if (/^\d{7,15}$/.test(nomor)) return jid;
+  // Nomor normal max 14 digit, LID biasanya 15 digit
+  if (/^\d{7,14}$/.test(nomor)) return jid;
 
   // 1. Cek contact store (hasil resolve sebelumnya)
   if (contactStore[waId]?.[jid]) {
@@ -346,6 +361,13 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
     for (const msg of messages) {
       try {
         if (msg.key.fromMe) continue;
+
+        // ===== DEDUPLICATION — skip pesan yang sudah diproses =====
+        const msgId = msg.key.id;
+        if (msgId && isDuplicateMsg(`${waId}:${msgId}`)) {
+          logger.info("WA-Manager", `Skip duplikat pesan: ${msgId}`);
+          continue;
+        }
 
         const remoteJid = msg.key.remoteJid;
 
