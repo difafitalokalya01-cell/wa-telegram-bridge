@@ -1,12 +1,10 @@
-const fs = require("fs");
+const fs     = require("fs");
 const logger = require("./logger");
 
 const CONFIG_FILE = "./config.json";
 const DATA_FILE   = "./auth_sessions/data.json";
 
-// ===== IN-MEMORY STATE =====
 let _config = null;
-let _data   = null;
 
 // ===== WRITE QUEUE — anti race condition =====
 let _isSaving = false;
@@ -47,27 +45,38 @@ function loadConfig() {
   if (fs.existsSync(DATA_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-      _config.waAccounts      = data.waAccounts      || {};
-      _config.activeAccounts  = data.activeAccounts  || {};
-      _config.blacklist       = data.blacklist        || _config.blacklist || [];
-      _config.queueSettings   = data.queueSettings   || _config.queueSettings;
-      _config.reminderSettings= data.reminderSettings|| _config.reminderSettings;
-      _config.botPool         = data.botPool          || {};
+      _config.waAccounts       = data.waAccounts       || {};
+      _config.activeAccounts   = data.activeAccounts   || {};
+      _config.blacklist        = data.blacklist         || _config.blacklist        || [];
+      _config.queueSettings    = data.queueSettings    || _config.queueSettings;
+      _config.reminderSettings = data.reminderSettings || _config.reminderSettings;
+      // Merge botPool dari data.json (status & waId bisa berubah runtime)
+      if (data.botPool && Array.isArray(data.botPool)) {
+        _config.botPool = _config.botPool.map((p) => {
+          const saved = data.botPool.find((d) => d.id === p.id);
+          return saved ? { ...p, waId: saved.waId, status: saved.status } : p;
+        });
+      }
     } catch (e) {
       logger.error("Store", `Gagal baca data.json: ${e.message}`);
     }
   }
 
+  // Pastikan field wajib ada
+  if (!_config.waAccounts)     _config.waAccounts     = {};
+  if (!_config.activeAccounts) _config.activeAccounts = {};
+  if (!_config.blacklist)      _config.blacklist       = [];
+  if (!Array.isArray(_config.botPool)) _config.botPool = [];
+
   return _config;
 }
 
-// ===== GET CONFIG (pakai cache, tidak baca file lagi) =====
 function getConfig() {
   if (!_config) loadConfig();
   return _config;
 }
 
-// ===== SAVE DATA (bagian yang berubah-ubah saat runtime) =====
+// ===== SAVE DATA =====
 async function saveData(cfg) {
   const c = cfg || _config;
   if (!c) return;
@@ -79,44 +88,59 @@ async function saveData(cfg) {
     blacklist:        c.blacklist         || [],
     queueSettings:    c.queueSettings,
     reminderSettings: c.reminderSettings,
-    botPool:          c.botPool           || {},
+    // Simpan hanya waId & status dari botPool (token tetap di config.json)
+    botPool: (c.botPool || []).map((p) => ({
+      id:     p.id,
+      waId:   p.waId   || null,
+      status: p.status || "kosong",
+    })),
   };
 
   await _writeFile(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// ===== HELPERS UPDATE PARSIAL =====
-async function updateBlacklist(list) {
+// ===== POOL BOT HELPERS =====
+
+// Cari slot kosong
+function getSlotKosong() {
   const cfg = getConfig();
-  cfg.blacklist = list;
-  await saveData(cfg);
+  return (cfg.botPool || []).find((p) => p.status === "kosong") || null;
 }
 
-async function updateQueueSettings(settings) {
+// Cari slot berdasarkan waId
+function getSlotByWaId(waId) {
   const cfg = getConfig();
-  cfg.queueSettings = { ...cfg.queueSettings, ...settings };
-  await saveData(cfg);
+  return (cfg.botPool || []).find((p) => p.waId === waId) || null;
 }
 
-async function updateReminderSettings(settings) {
-  const cfg = getConfig();
-  cfg.reminderSettings = { ...cfg.reminderSettings, ...settings };
+// Assign waId ke slot
+async function assignSlot(poolId, waId) {
+  const cfg  = getConfig();
+  const slot = cfg.botPool.find((p) => p.id === poolId);
+  if (!slot) return false;
+  slot.waId   = waId;
+  slot.status = "terisi";
   await saveData(cfg);
+  return true;
 }
 
-async function updateWaAccounts(waAccounts, activeAccounts) {
-  const cfg = getConfig();
-  if (waAccounts)     cfg.waAccounts     = waAccounts;
-  if (activeAccounts) cfg.activeAccounts = activeAccounts;
+// Kosongkan slot
+async function kosongkanSlot(poolId) {
+  const cfg  = getConfig();
+  const slot = cfg.botPool.find((p) => p.id === poolId);
+  if (!slot) return false;
+  slot.waId   = null;
+  slot.status = "kosong";
   await saveData(cfg);
+  return true;
 }
 
 module.exports = {
   loadConfig,
   getConfig,
   saveData,
-  updateBlacklist,
-  updateQueueSettings,
-  updateReminderSettings,
-  updateWaAccounts,
+  getSlotKosong,
+  getSlotByWaId,
+  assignSlot,
+  kosongkanSlot,
 };

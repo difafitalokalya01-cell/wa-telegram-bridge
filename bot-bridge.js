@@ -259,22 +259,29 @@ function setupCallbacks() {
       chatLog[id].status       = "perlu_dibalas";
       chatLog[id].waktuPesan   = Date.now();
       chatLog[id].pesanTerakhir= pesan;
-      // Reset reminder saat pesan baru masuk
       chatLog[id].reminder1Terkirim = false;
       chatLog[id].reminder2Terkirim = false;
       chatLog[id].reminder3Terkirim = false;
       tambahRiwayat(id, nama, pesan);
       await saveChatLog();
 
-      const nomorHR = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
-      await kirimTeks(
-        `<b>[${id}] ${waId}</b>\n` +
-        `📱 Diterima: <code>${nomorHR}</code>\n` +
-        `👤 <b>${nama}</b>\n` +
-        `📞 <b>${jid.replace(/@.*/, "")}</b>\n\n` +
-        `💬 ${pesan}\n\n` +
-        `<i>Balas: /${id} pesanmu</i>`
-      );
+      // Kirim ke slot pool jika ada, fallback ke bot bridge lama
+      const store = require("./store");
+      const slot  = store.getSlotByWaId(waId);
+      if (slot) {
+        const botPool = require("./bot-pool");
+        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan);
+      } else {
+        const nomorHR = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
+        await kirimTeks(
+          `<b>[${id}] ${waId}</b>\n` +
+          `📱 Diterima: <code>${nomorHR}</code>\n` +
+          `👤 <b>${nama}</b>\n` +
+          `📞 <b>${jid.replace(/@.*/, "")}</b>\n\n` +
+          `💬 ${pesan}\n\n` +
+          `<i>Balas: /${id} pesanmu</i>`
+        );
+      }
       logger.info("Bot-Bridge", `Pesan masuk [${id}] dari ${nama} via ${waId}`);
     },
 
@@ -290,17 +297,23 @@ function setupCallbacks() {
       tambahRiwayat(id, nama, caption || `[${mediaType.replace("Message", "")}]`);
       await saveChatLog();
 
-      const info =
-        `[${id}] ${waId}\n` +
-        `👤 ${nama}\n` +
-        `📞 ${jid.replace(/@.*/, "")}\n` +
-        (caption ? `💬 ${caption}\n` : "") +
-        `\nBalas: /${id} pesanmu`;
-
-      if (mediaType === "imageMessage")       await kirimFoto(buffer, info);
-      else if (mediaType === "videoMessage")  await kirimVideo(buffer, info);
-      else                                    await kirimDokumen(buffer, `file.${ext}`, info);
-
+      // Kirim ke slot pool jika ada, fallback ke bot bridge lama
+      const store = require("./store");
+      const slot  = store.getSlotByWaId(waId);
+      if (slot) {
+        const botPool = require("./bot-pool");
+        await botPool.notifMediaMasuk(slot, id, waId, nama, jid, caption, mediaType);
+      } else {
+        const info =
+          `[${id}] ${waId}\n` +
+          `👤 ${nama}\n` +
+          `📞 ${jid.replace(/@.*/, "")}\n` +
+          (caption ? `💬 ${caption}\n` : "") +
+          `\nBalas: /${id} pesanmu`;
+        if (mediaType === "imageMessage")       await kirimFoto(buffer, info);
+        else if (mediaType === "videoMessage")  await kirimVideo(buffer, info);
+        else                                    await kirimDokumen(buffer, `file.${ext}`, info);
+      }
       logger.info("Bot-Bridge", `Media masuk [${id}] dari ${nama} via ${waId}`);
     },
 
