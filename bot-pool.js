@@ -40,20 +40,29 @@ function isLidJid(jid) {
 }
 
 // ===== NOTIF PESAN MASUK KE BOT POOL =====
-async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false) {
+async function notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid = false, nomorDariPesan = null) {
   const adminId    = store.getConfig().adminTelegramId;
   const lidFlag    = isLid || isLidJid(jid);
   const nomorTampil= jid.replace(/@.*/, "");
+
+  let lidInfo = "";
+  if (lidFlag) {
+    if (nomorDariPesan) {
+      lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+                `<i>Fix: /fixjid ${id} ${nomorDariPesan} — lalu /${id} pesanmu</i>`;
+    } else {
+      lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+                `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`;
+    }
+  }
+
   await kirimKeSlot(
     slot.token, adminId,
     `<b>[${id}] ${waId}</b>\n` +
     `👤 <b>${nama || "."}</b>\n` +
     `📞 <b>${nomorTampil}</b>\n\n` +
     `💬 ${pesan}\n\n` +
-    (lidFlag
-      ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-        `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
-      : `<i>Balas: /${id} pesanmu</i>`)
+    (lidFlag ? lidInfo : `<i>Balas: /${id} pesanmu</i>`)
   );
 }
 

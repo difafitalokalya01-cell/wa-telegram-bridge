@@ -85,6 +85,44 @@ function isLidJid(jid) {
   return false;
 }
 
+// ===== EKSTRAK NOMOR WA DARI ISI PESAN =====
+function ekstrakNomorDariPesan(pesan) {
+  if (!pesan) return null;
+
+  // Variasi label nomor yang didukung
+  const patterns = [
+    /No[\s.]?WhatsApp\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /No[\s.]?WA\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Nomor[\s.]?WA\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Nomor[\s.]?WhatsApp\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /No[\s.]?HP\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /No[\s.]?Hp\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Nomor[\s.]?HP\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Nomor[\s.]?Hp\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Nomor[\s.]?Telepon\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Telepon\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Telp\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Phone\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Handphone\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /HP\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Kontak\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+    /Contact\s*[:：]\s*([0-9+\-\s()]{8,20})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pesan.match(pattern);
+    if (match) {
+      // Bersihkan nomor — hapus spasi, strip, kurung, +
+      let nomor = match[1].replace(/[\s\-()]/g, "").replace(/^\+/, "");
+      // Konversi 08xx → 628xx
+      if (nomor.startsWith("0")) nomor = "62" + nomor.slice(1);
+      // Validasi panjang
+      if (/^\d{10,15}$/.test(nomor)) return nomor;
+    }
+  }
+  return null;
+}
+
 // ===== DAPATKAN ATAU BUAT ID =====
 function getOrCreateId(waId, jid, nama) {
   const key = `${waId}:${jid}`;
@@ -280,26 +318,36 @@ function setupCallbacks() {
       tambahRiwayat(id, nama, pesan);
       await saveChatLog();
 
+      // Ekstrak nomor dari isi pesan kalau ada
+      const nomorDariPesan = ekstrakNomorDariPesan(pesan);
+
       // Kirim ke slot pool jika ada, fallback ke bot bridge lama
       const store = require("./store");
       const slot  = store.getSlotByWaId(waId);
       const isLid = isLidJid(jid);
       if (slot) {
         const botPool = require("./bot-pool");
-        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid);
+        await botPool.notifPesanMasuk(slot, id, waId, nama, jid, pesan, isLid, nomorDariPesan);
       } else {
-        const nomorHR = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
-        const nomorTampil = jid.replace(/@.*/, "");
+        const nomorHR    = waManager.getInstance(waId)?.jid?.replace(/:.*@.*/, "") || waId;
+        const nomorTampil= jid.replace(/@.*/, "");
+        let lidInfo = "";
+        if (isLid) {
+          if (nomorDariPesan) {
+            lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+                      `<i>Fix: /fixjid ${id} ${nomorDariPesan} — lalu /${id} pesanmu</i>`;
+          } else {
+            lidInfo = `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
+                      `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`;
+          }
+        }
         await kirimTeks(
           `<b>[${id}] ${waId}</b>\n` +
           `📱 Diterima: <code>${nomorHR}</code>\n` +
           `👤 <b>${nama}</b>\n` +
           `📞 <b>${nomorTampil}</b>\n\n` +
           `💬 ${pesan}\n\n` +
-          (isLid
-            ? `⚠️ <i>Nomor belum terdeteksi (WA Web/Business)</i>\n` +
-              `<i>Fix: /fixjid ${id} 628xxx — lalu /${id} pesanmu</i>`
-            : `<i>Balas: /${id} pesanmu</i>`)
+          (isLid ? lidInfo : `<i>Balas: /${id} pesanmu</i>`)
         );
       }
       logger.info("Bot-Bridge", `Pesan masuk [${id}] dari ${nama} via ${waId}`);
