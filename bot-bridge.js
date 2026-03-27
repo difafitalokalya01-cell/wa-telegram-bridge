@@ -398,7 +398,7 @@ async function prosesPerintah(msg) {
   }
 
   // ===== DAFTAR PERINTAH KHUSUS — cek dulu sebelum proses ID balas =====
-  const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "fixjid"];
+  const perintahKhusus = ["ke", "dc", "daftarchat", "lihat", "riwayat", "catat", "selesai", "antrian", "status", "start", "fixjid", "kirim", "assign", "reset", "pool", "healthcheck", "pengaturan", "blacklist", "tambahblacklist", "hapusblacklist"];
 
   // ===== /start =====
   if (teks === "/start") {

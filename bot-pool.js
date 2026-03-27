@@ -152,6 +152,36 @@ async function prosesPerintahPool(msg, poolId) {
     return;
   }
 
+  // ===== /fixjid A 628xxx =====
+  if (teks.startsWith("/fixjid ")) {
+    const bagian = teks.replace("/fixjid ", "").trim().split(" ");
+    if (bagian.length !== 2) {
+      await kirimKeSlot(slot.token, adminId, "❌ Format: /fixjid [id] [nomor]\nContoh: /fixjid K 6282390544157");
+      return;
+    }
+    const id       = bagian[0].toUpperCase();
+    const nomorBaru= bagian[1].trim().replace(/[^0-9]/g, "");
+    const { getChatLog, updateChatLog: updateCL } = require("./bot-bridge");
+    const cl       = getChatLog();
+    const chat     = cl[id];
+
+    if (!chat) {
+      await kirimKeSlot(slot.token, adminId, `❌ Chat [${id}] tidak ditemukan.`);
+      return;
+    }
+
+    const jidLama = chat.jid;
+    const jidBaru = `${nomorBaru}@s.whatsapp.net`;
+    updateCL(id, { jid: jidBaru, status: "perlu_dibalas" });
+    await kirimKeSlot(slot.token, adminId,
+      `✅ JID [${id}] ${chat.nama} diperbaiki!\n\n` +
+      `Lama: <code>${jidLama.replace(/@.*/, "")}</code>\n` +
+      `Baru: <code>${nomorBaru}</code>\n\n` +
+      `Coba balas lagi: /${id} pesanmu`
+    );
+    return;
+  }
+
   // ===== /selesai A =====
   if (teks.startsWith("/selesai ")) {
     const id   = teks.replace("/selesai ", "").trim().toUpperCase();
@@ -168,7 +198,7 @@ async function prosesPerintahPool(msg, poolId) {
   // ===== BALAS: /A pesanmu =====
   const matchBalas = teks.match(/^\/([A-Za-z]+)\s+(.+)$/s);
   if (matchBalas) {
-    const perintahKhusus = ["dc", "lihat", "selesai", "status", "antrian", "start"];
+    const perintahKhusus = ["dc", "lihat", "selesai", "status", "antrian", "start", "fixjid"];
     const idRaw   = matchBalas[1].toLowerCase();
     const idUpper = matchBalas[1].toUpperCase();
     const pesan   = matchBalas[2].trim();
