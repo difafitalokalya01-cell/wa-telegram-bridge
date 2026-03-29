@@ -1,1 +1,0 @@
-# wa-telegram-bridge
