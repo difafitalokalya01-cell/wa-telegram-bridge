@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Settings — HR Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0a0a0f;
+  --surface:  #13131a;
+  --surface2: #1a1a24;
+  --border:   #1e1e2e;
+  --border2:  #2a2a3e;
+  --accent:   #4ade80;
+  --accent2:  #22c55e;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --muted2:   #94a3b8;
+  --danger:   #f87171;
+  --warning:  #fbbf24;
+  --info:     #60a5fa;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "DM Sans", sans-serif;
+  min-height: 100vh;
+}
+
+/* TOPBAR */
+.topbar {
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topbar-back {
+  background: none;
+  border: none;
+  color: var(--muted2);
+  cursor: pointer;
+  font-size: 14px;
+  font-family: "DM Sans", sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background .15s;
+}
+.topbar-back:hover { background: var(--surface2); }
+
+.topbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.ws-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.ws-dot.on { background: var(--accent); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* CONTENT */
+.content {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* SECTION */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.section-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-body { padding: 16px 20px; }
+
+/* WA ITEM */
+.wa-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.wa-item:last-child { border-bottom: none; }
+
+.wa-avatar {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.wa-info { flex: 1; }
+
+.wa-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.wa-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+}
+
+.wa-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-family: "DM Mono", monospace;
+}
+.wa-status.connected { background: rgba(74,222,128,.1); color: var(--accent); border: 1px solid rgba(74,222,128,.2); }
+.wa-status.disconnected { background: rgba(248,113,113,.1); color: var(--danger); border: 1px solid rgba(248,113,113,.2); }
+.wa-status.connecting { background: rgba(251,191,36,.1); color: var(--warning); border: 1px solid rgba(251,191,36,.2); }
+
+.wa-dot-s { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.wa-status.connected .wa-dot-s { animation: pulse 2s infinite; }
+
+.wa-actions { display: flex; gap: 8px; }
+
+/* BUTTONS */
+.btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: "DM Sans", sans-serif;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: all .15s;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface2); border-color: var(--border2); }
+.btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+.btn.primary:hover { background: var(--accent2); }
+.btn.danger { color: var(--danger); border-color: rgba(248,113,113,.3); }
+.btn.danger:hover { background: rgba(248,113,113,.1); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ADD WA FORM */
+.add-wa-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.input-field {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: "DM Mono", monospace;
+  outline: none;
+  transition: border-color .15s;
+}
+.input-field:focus { border-color: var(--accent); }
+
+/* QR MODAL */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.8);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.show { display: flex; }
+
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 32px;
+  width: 90%;
+  max-width: 380px;
+  text-align: center;
+  animation: fadeUp .25s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.modal-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.qr-container {
+  width: 220px;
+  height: 220px;
+  margin: 0 auto 20px;
+  background: white;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.qr-img {
+  width: 200px;
+  height: 200px;
+  display: none;
+}
+
+.qr-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.qr-timer {
+  font-size: 13px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  margin-bottom: 16px;
+}
+
+.qr-steps {
+  text-align: left;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 20px;
+}
+.qr-step {
+  font-size: 12px;
+  color: var(--muted2);
+  padding: 4px 0;
+  display: flex;
+  gap: 8px;
+}
+.qr-step-num {
+  width: 18px; height: 18px;
+  background: var(--border2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* SUCCESS STATE */
+.success-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  display: none;
+}
+
+/* SETTINGS ROWS */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.setting-row:last-child { border-bottom: none; }
+
+.setting-label { font-size: 14px; font-weight: 500; }
+.setting-desc  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.setting-value {
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+/* TOAST */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  animation: toastIn .3s ease;
+}
+.toast.success { border-color: rgba(74,222,128,.3); }
+.toast.error   { border-color: rgba(248,113,113,.3); color: var(--danger); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <button class="topbar-back" onclick="window.location.href='/dashboard/app.html'">
+    ← Dashboard
+  </button>
+  <span class="topbar-title">⚙️ Settings</span>
+  <div class="ws-dot" id="wsDot"></div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- WA ACCOUNTS -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">📱 Akun WhatsApp</div>
+      <button class="btn primary" onclick="showTambahWA()">+ Tambah WA</button>
+    </div>
+    <div class="section-body">
+      <div id="waList">
+        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">
+          <div class="spinner" style="margin:0 auto 12px;"></div>
+          Memuat...
+        </div>
+      </div>
+
+      <!-- Form tambah WA -->
+      <div id="tambahWAForm" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">Nama akun WA (contoh: wa1, wa2)</div>
+        <div class="add-wa-form">
+          <input class="input-field" id="waIdInput" placeholder="wa1" maxlength="20">
+          <button class="btn primary" onclick="daftarkanWA()">Daftarkan</button>
+          <button class="btn" onclick="hideTambahWA()">Batal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMINDER SETTINGS -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">⏰ Pengingat Otomatis</div>
+    </div>
+    <div class="section-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Pengingat 1</div>
+          <div class="setting-desc">Notif pertama kalau belum dibalas</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input class="input-field" id="r1" type="number" value="30" min="1" max="1440"
+            style="width:70px;text-align:center;">
+          <span style="font-size:13px;color:var(--muted);">menit</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Pengingat 2</div>
+          <div class="setting-desc">Notif kedua kalau masih belum dibalas</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input class="input-field" id="r2" type="number" value="60" min="1" max="1440"
+            style="width:70px;text-align:center;">
+          <span style="font-size:13px;color:var(--muted);">menit</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Pengingat 3 (URGENT)</div>
+          <div class="setting-desc">Notif terakhir — sudah sangat terlambat</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input class="input-field" id="r3" type="number" value="120" min="1" max="1440"
+            style="width:70px;text-align:center;">
+          <span style="font-size:13px;color:var(--muted);">menit</span>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <button class="btn primary" onclick="simpanReminder()">Simpan Pengaturan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLACKLIST -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">🚫 Blacklist Nomor</div>
+    </div>
+    <div class="section-body">
+      <div id="blacklistList" style="margin-bottom:16px;"></div>
+      <div class="add-wa-form">
+        <input class="input-field" id="blNomor" placeholder="628xxxxxxxxxx">
+        <input class="input-field" id="blAlasan" placeholder="Alasan (opsional)" style="flex:2;">
+        <button class="btn danger" onclick="tambahBlacklist()">Blokir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM INFO -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">ℹ️ Info Sistem</div>
+    </div>
+    <div class="section-body">
+      <div class="setting-row">
+        <div class="setting-label">Status Database</div>
+        <div class="setting-value" id="dbStatus">Mengecek...</div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Status Cache</div>
+        <div class="setting-value" id="cacheStatus">Mengecek...</div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Antrian Pesan</div>
+        <div class="setting-value" id="antrianStatus">Mengecek...</div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Uptime</div>
+        <div class="setting-value" id="uptimeStatus">Mengecek...</div>
+      </div>
+      <div style="margin-top:16px;">
+        <button class="btn" onclick="loadSystemInfo()">🔄 Refresh</button>
+        <button class="btn danger" style="margin-left:8px;" onclick="doLogout()">⎋ Logout</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- QR MODAL -->
+<div class="modal-overlay" id="qrModal">
+  <div class="modal-box">
+    <div class="success-icon" id="successIcon">✅</div>
+    <div class="modal-title" id="qrTitle">Hubungkan WhatsApp</div>
+    <div class="modal-sub" id="qrSub">Menunggu QR code...</div>
+
+    <div class="qr-container" id="qrContainer">
+      <div class="qr-loading" id="qrLoading">
+        <div class="spinner"></div>
+        <div style="font-size:12px;">Generating QR...</div>
+      </div>
+      <img class="qr-img" id="qrImg" alt="QR Code">
+    </div>
+
+    <div class="qr-timer" id="qrTimer"></div>
+
+    <div class="qr-steps">
+      <div class="qr-step"><div class="qr-step-num">1</div> Buka WhatsApp di HP kamu</div>
+      <div class="qr-step"><div class="qr-step-num">2</div> Tap Menu ⋮ → Perangkat Tertaut</div>
+      <div class="qr-step"><div class="qr-step-num">3</div> Tap Tautkan Perangkat</div>
+      <div class="qr-step"><div class="qr-step-num">4</div> Scan QR code di atas</div>
+    </div>
+
+    <button class="btn" onclick="closeQRModal()" style="width:100%;">Tutup</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const token = localStorage.getItem("hr_token");
+if (!token) window.location.href = "/dashboard/login.html";
+
+let ws = null;
+let wsRetry = 0;
+let qrTimerInterval = null;
+let currentQRWaId = null;
+
+// ══════════════════════════════════════════════
+// API
+// ══════════════════════════════════════════════
+async function api(path, method = "GET", body = null) {
+  const opts = {
+    method,
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  if (res.status === 401) { localStorage.removeItem("hr_token"); window.location.href = "/dashboard/login.html"; }
+  return res.json();
+}
+
+// ══════════════════════════════════════════════
+// WEBSOCKET
+// ══════════════════════════════════════════════
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen  = () => ws.send(JSON.stringify({ type: "auth", token }));
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "auth_ok") document.getElementById("wsDot").classList.add("on");
+    if (msg.type === "ping")    ws.send(JSON.stringify({ type: "pong" }));
+    if (msg.type === "event")   handleWSEvent(msg.event, msg.data);
+  };
+  ws.onclose = () => {
+    document.getElementById("wsDot").classList.remove("on");
+    setTimeout(connectWS, Math.min(1000 * Math.pow(2, wsRetry++), 30000));
+  };
+}
+
+function handleWSEvent(event, data) {
+  if (event === "wa:qr_diterima" && data.waId === currentQRWaId) {
+    showQRImage(data.qr);
+  }
+  if (event === "wa:terhubung" && data.waId === currentQRWaId) {
+    showQRSuccess(data.waId, data.jid);
+    loadWAAccounts();
+  }
+  if (event === "wa:terhubung" || event === "wa:terputus") {
+    loadWAAccounts();
+  }
+}
+
+// ══════════════════════════════════════════════
+// WA ACCOUNTS
+// ══════════════════════════════════════════════
+async function loadWAAccounts() {
+  const [waStatus, accounts] = await Promise.all([
+    api("/api/wa/status"),
+    api("/api/wa/accounts"),
+  ]);
+
+  const list = document.getElementById("waList");
+
+  if (!accounts?.length) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">Belum ada akun WA terdaftar.<br>Klik "Tambah WA" untuk memulai.</div>`;
+    return;
+  }
+
+  list.innerHTML = accounts.map(acc => {
+    const status = waStatus[acc.wa_id];
+    const connected = status?.status === "connected";
+    const nomor = status?.jid?.replace(/@.*/, "") || "—";
+    return `
+      <div class="wa-item">
+        <div class="wa-avatar">📱</div>
+        <div class="wa-info">
+          <div class="wa-name">${acc.wa_id}</div>
+          <div class="wa-meta">${connected ? nomor : (acc.aktif ? "Tidak terhubung" : "Nonaktif")}</div>
+        </div>
+        <div class="wa-status ${connected ? "connected" : "disconnected"}">
+          <div class="wa-dot-s"></div>
+          ${connected ? "Terhubung" : "Terputus"}
+        </div>
+        <div class="wa-actions">
+          ${!connected
+            ? `<button class="btn primary" onclick="hubungkanWA('${acc.wa_id}')">QR</button>`
+            : `<button class="btn danger" onclick="putuskanWA('${acc.wa_id}')">Putus</button>`
+          }
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function showTambahWA() {
+  document.getElementById("tambahWAForm").style.display = "block";
+  document.getElementById("waIdInput").focus();
+}
+
+function hideTambahWA() {
+  document.getElementById("tambahWAForm").style.display = "none";
+  document.getElementById("waIdInput").value = "";
+}
+
+async function daftarkanWA() {
+  const waId = document.getElementById("waIdInput").value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!waId) { toast("Nama akun tidak boleh kosong", "error"); return; }
+
+  const res = await api("/api/wa/daftar", "POST", { waId });
+  if (res.success) {
+    toast(`✅ ${waId} berhasil didaftarkan`, "success");
+    hideTambahWA();
+    await loadWAAccounts();
+    // Langsung tawari untuk hubungkan
+    setTimeout(() => hubungkanWA(waId), 500);
+  } else {
+    toast(res.error || "Gagal daftarkan", "error");
+  }
+}
+
+async function hubungkanWA(waId) {
+  currentQRWaId = waId;
+  showQRModal(waId);
+
+  const res = await api(`/api/wa/qr/${waId}`, "POST");
+  if (!res.success) {
+    toast(res.error || "Gagal request QR", "error");
+    closeQRModal();
+  }
+}
+
+async function putuskanWA(waId) {
+  if (!confirm(`Putuskan ${waId} dari WhatsApp?`)) return;
+  const res = await api(`/api/wa/putus/${waId}`, "POST");
+  if (res.success) {
+    toast(`✅ ${waId} diputuskan`, "success");
+    loadWAAccounts();
+  } else {
+    toast(res.error || "Gagal", "error");
+  }
+}
+
+// ══════════════════════════════════════════════
+// QR MODAL
+// ══════════════════════════════════════════════
+function showQRModal(waId) {
+  document.getElementById("qrModal").classList.add("show");
+  document.getElementById("qrTitle").textContent = `Hubungkan ${waId}`;
+  document.getElementById("qrSub").textContent = "Menunggu QR code dari server...";
+  document.getElementById("qrLoading").style.display = "flex";
+  document.getElementById("qrImg").style.display = "none";
+  document.getElementById("successIcon").style.display = "none";
+  document.getElementById("qrTimer").textContent = "";
+
+  // Timeout kalau QR tidak datang dalam 30 detik
+  setTimeout(() => {
+    if (document.getElementById("qrLoading").style.display !== "none") {
+      document.getElementById("qrSub").textContent = "QR tidak muncul. Coba lagi.";
+    }
+  }, 30000);
+}
+
+function showQRImage(qrData) {
+  // qrData adalah string QR — render sebagai gambar via QR API
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`;
+  const img = document.getElementById("qrImg");
+  img.src = qrUrl;
+  img.style.display = "block";
+  document.getElementById("qrLoading").style.display = "none";
+  document.getElementById("qrSub").textContent = "Scan QR code dengan WhatsApp sekarang!";
+
+  // Timer 60 detik
+  let sisa = 60;
+  document.getElementById("qrTimer").textContent = `QR kedaluwarsa dalam ${sisa}s`;
+  clearInterval(qrTimerInterval);
+  qrTimerInterval = setInterval(() => {
+    sisa--;
+    if (sisa <= 0) {
+      clearInterval(qrTimerInterval);
+      document.getElementById("qrTimer").textContent = "QR kedaluwarsa — tunggu QR baru...";
+      document.getElementById("qrImg").style.display = "none";
+      document.getElementById("qrLoading").style.display = "flex";
+      document.getElementById("qrSub").textContent = "Menunggu QR baru...";
+    } else {
+      document.getElementById("qrTimer").textContent = `QR kedaluwarsa dalam ${sisa}s`;
+    }
+  }, 1000);
+}
+
+function showQRSuccess(waId, jid) {
+  clearInterval(qrTimerInterval);
+  const nomor = jid?.replace(/@.*/, "") || waId;
+  document.getElementById("successIcon").style.display = "block";
+  document.getElementById("qrTitle").textContent = "WhatsApp Terhubung! 🎉";
+  document.getElementById("qrSub").textContent = `${waId} (${nomor}) berhasil terhubung`;
+  document.getElementById("qrContainer").style.display = "none";
+  document.getElementById("qrTimer").textContent = "";
+
+  // Auto tutup setelah 3 detik
+  setTimeout(closeQRModal, 3000);
+}
+
+function closeQRModal() {
+  document.getElementById("qrModal").classList.remove("show");
+  document.getElementById("qrContainer").style.display = "flex";
+  clearInterval(qrTimerInterval);
+  currentQRWaId = null;
+}
+
+// ══════════════════════════════════════════════
+// REMINDER SETTINGS
+// ══════════════════════════════════════════════
+async function loadReminderSettings() {
+  const data = await api("/api/settings/reminder");
+  if (data) {
+    document.getElementById("r1").value = data.reminder1 || 30;
+    document.getElementById("r2").value = data.reminder2 || 60;
+    document.getElementById("r3").value = data.reminder3 || 120;
+  }
+}
+
+async function simpanReminder() {
+  const r1 = parseInt(document.getElementById("r1").value);
+  const r2 = parseInt(document.getElementById("r2").value);
+  const r3 = parseInt(document.getElementById("r3").value);
+
+  if (r1 >= r2 || r2 >= r3) {
+    toast("Urutan menit harus: Pengingat 1 < 2 < 3", "error");
+    return;
+  }
+
+  const res = await api("/api/settings/reminder", "POST", { reminder1: r1, reminder2: r2, reminder3: r3 });
+  if (res.success) toast("✅ Pengingat disimpan", "success");
+  else toast(res.error || "Gagal simpan", "error");
+}
+
+// ══════════════════════════════════════════════
+// BLACKLIST
+// ══════════════════════════════════════════════
+async function loadBlacklist() {
+  const daftar = await api("/api/blacklist");
+  const el = document.getElementById("blacklistList");
+  if (!daftar?.length) { el.innerHTML = `<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">Belum ada nomor yang diblokir.</div>`; return; }
+  el.innerHTML = daftar.map(b => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-family:DM Mono,monospace;font-size:13px;">${b.nomor}</div>
+        ${b.alasan ? `<div style="font-size:11px;color:var(--muted);">${b.alasan}</div>` : ""}
+      </div>
+      <button class="btn danger" style="padding:5px 10px;font-size:12px;" onclick="hapusBlacklist('${b.nomor}')">Hapus</button>
+    </div>`).join("");
+}
+
+async function tambahBlacklist() {
+  const nomor  = document.getElementById("blNomor").value.trim().replace(/[^0-9]/g, "");
+  const alasan = document.getElementById("blAlasan").value.trim();
+  if (!nomor) { toast("Nomor wajib diisi", "error"); return; }
+  const res = await api("/api/blacklist", "POST", { nomor, alasan });
+  if (res.success) {
+    toast(`✅ ${nomor} diblokir`, "success");
+    document.getElementById("blNomor").value = "";
+    document.getElementById("blAlasan").value = "";
+    loadBlacklist();
+  } else toast(res.error || "Gagal", "error");
+}
+
+async function hapusBlacklist(nomor) {
+  const res = await api(`/api/blacklist/${nomor}`, "DELETE");
+  if (res.success) { toast(`✅ ${nomor} dihapus dari blacklist`, "success"); loadBlacklist(); }
+  else toast(res.error || "Gagal", "error");
+}
+
+// ══════════════════════════════════════════════
+// SYSTEM INFO
+// ══════════════════════════════════════════════
+async function loadSystemInfo() {
+  try {
+    const [health, antrian] = await Promise.all([
+      fetch("/health").then(r => r.json()),
+      api("/api/antrian"),
+    ]);
+    document.getElementById("dbStatus").textContent    = health.database === "ok" ? "✅ OK" : "❌ Error";
+    document.getElementById("cacheStatus").textContent = health.cache    === "ok" ? "✅ OK" : "❌ Error";
+    document.getElementById("antrianStatus").textContent = `${antrian.panjangAntrian || 0} pesan`;
+    const uptime = Math.floor((health.uptime || 0) / 60);
+    document.getElementById("uptimeStatus").textContent = uptime > 60
+      ? `${Math.floor(uptime/60)} jam ${uptime%60} menit`
+      : `${uptime} menit`;
+  } catch(e) {
+    document.getElementById("dbStatus").textContent = "❌ Error";
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem("hr_token");
+  window.location.href = "/dashboard/login.html";
+}
+
+// ══════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════
+function toast(msg, type = "info") {
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById("toastContainer").appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+async function init() {
+  connectWS();
+  await Promise.all([
+    loadWAAccounts(),
+    loadReminderSettings(),
+    loadBlacklist(),
+    loadSystemInfo(),
+  ]);
+}
+
+init();
+</script>
+</body>
+</html>
