@@ -235,10 +235,61 @@ async function hapusBlacklist(req, res) {
   }
 }
 
+// GET /api/wa/accounts
+async function getWaAccounts(req, res) {
+  try {
+    const accounts = await require("../core/database").getWaAccounts();
+    res.json(accounts);
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/wa/daftar
+async function daftarWA(req, res) {
+  try {
+    const { waId } = req.body;
+    if (!waId) return res.status(400).json({ error: "waId wajib diisi" });
+    await require("../core/database").setWaAktif(waId, true);
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/wa/putus/:waId
+async function putuskanWA(req, res) {
+  try {
+    const { waId } = req.params;
+    await waManager?.disconnectWA(waId);
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// GET /api/settings/reminder
+async function getReminderSettings(req, res) {
+  try {
+    const fs  = require("fs");
+    const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+    res.json(cfg.reminderSettings || { reminder1: 30, reminder2: 60, reminder3: 120 });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/settings/reminder
+async function setReminderSettings(req, res) {
+  try {
+    const { reminder1, reminder2, reminder3 } = req.body;
+    if (!reminder1 || !reminder2 || !reminder3) return res.status(400).json({ error: "Semua field wajib diisi" });
+    const fs  = require("fs");
+    const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+    cfg.reminderSettings = { reminder1, reminder2, reminder3 };
+    fs.writeFileSync("./config.json", JSON.stringify(cfg, null, 2));
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
 module.exports = {
   getDaftarKandidat, getDetailKandidat, balasKandidat,
   selesaikanKandidat, catatKandidat, fixJidKandidat, getStats,
   kirimKeNomorBaru, getWaStatus, requestQR, getAntrian,
   getBlacklist, tambahBlacklist, hapusBlacklist,
+  getWaAccounts, daftarWA, putuskanWA,
+  getReminderSettings, setReminderSettings,
   setWaManager,
 };
