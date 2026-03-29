@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>HR Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0a0a0f;
+  --surface:  #13131a;
+  --surface2: #1a1a24;
+  --border:   #1e1e2e;
+  --border2:  #2a2a3e;
+  --accent:   #4ade80;
+  --accent2:  #22c55e;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --muted2:   #94a3b8;
+  --danger:   #f87171;
+  --warning:  #fbbf24;
+  --info:     #60a5fa;
+  --sidebar-w: 320px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "DM Sans", sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOPBAR ─────────────────────────────────────────── */
+.topbar {
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.topbar-logo { font-size: 20px; }
+
+.topbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  flex: 1;
+}
+
+.wa-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wa-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-family: "DM Mono", monospace;
+  border: 1px solid transparent;
+}
+
+.wa-badge.connected {
+  background: rgba(74,222,128,.1);
+  border-color: rgba(74,222,128,.2);
+  color: var(--accent);
+}
+
+.wa-badge.disconnected {
+  background: rgba(248,113,113,.1);
+  border-color: rgba(248,113,113,.2);
+  color: var(--danger);
+}
+
+.wa-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.wa-badge.connected .wa-dot {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: .4; }
+}
+
+.ws-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  margin-left: 4px;
+}
+.ws-status.connected { background: var(--accent); }
+
+/* ── LAYOUT ─────────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── SIDEBAR ────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-chip {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+
+.stat-chip.active { border-color: var(--accent); }
+
+.stat-chip:hover { border-color: var(--border2); }
+
+.stat-num {
+  font-size: 18px;
+  font-weight: 600;
+  font-family: "DM Mono", monospace;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.stat-chip[data-filter="perlu_dibalas"] .stat-num { color: var(--warning); }
+.stat-chip[data-filter="menunggu"] .stat-num       { color: var(--info); }
+.stat-chip[data-filter="all"] .stat-num            { color: var(--text); }
+
+.search-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: "DM Sans", sans-serif;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.search-input:focus { border-color: var(--accent); }
+
+/* ── KANDIDAT LIST ──────────────────────────────────── */
+.kandidat-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.kandidat-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .1s;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.kandidat-item:hover   { background: var(--surface2); }
+.kandidat-item.active  { background: rgba(74,222,128,.07); border-right: 2px solid var(--accent); }
+
+.kandidat-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--border2), var(--surface2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-family: "DM Mono", monospace;
+}
+
+.kandidat-info { flex: 1; min-width: 0; }
+
+.kandidat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.kandidat-nama {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.kandidat-time {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  white-space: nowrap;
+}
+
+.kandidat-preview {
+  font-size: 12px;
+  color: var(--muted2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kandidat-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.status-pill {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "DM Mono", monospace;
+  font-weight: 500;
+}
+
+.status-pill.perlu_dibalas { background: rgba(251,191,36,.15); color: var(--warning); }
+.status-pill.menunggu      { background: rgba(96,165,250,.15); color: var(--info); }
+.status-pill.baru          { background: rgba(74,222,128,.15); color: var(--accent); }
+.status-pill.selesai       { background: rgba(100,116,139,.15); color: var(--muted2); }
+.status-pill.tidak_aktif   { background: rgba(248,113,113,.15); color: var(--danger); }
+
+.wa-tag {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+}
+
+.unread-badge {
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  color: #000;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+/* ── CHAT PANEL ─────────────────────────────────────── */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  gap: 12px;
+}
+
+.chat-empty-icon { font-size: 48px; opacity: .3; }
+.chat-empty-text { font-size: 14px; }
+
+/* ── CHAT HEADER ────────────────────────────────────── */
+.chat-header {
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-header-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--border2), var(--surface2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: "DM Mono", monospace;
+}
+
+.chat-header-info { flex: 1; }
+
+.chat-header-nama {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chat-header-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+}
+
+.chat-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-action {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: "DM Sans", sans-serif;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all .15s;
+  background: transparent;
+  color: var(--text);
+}
+
+.btn-action:hover { border-color: var(--border2); background: var(--surface2); }
+
+.btn-action.danger {
+  border-color: rgba(248,113,113,.3);
+  color: var(--danger);
+}
+
+.btn-action.danger:hover { background: rgba(248,113,113,.1); }
+
+.btn-action.success {
+  border-color: rgba(74,222,128,.3);
+  color: var(--accent);
+}
+
+.btn-action.success:hover { background: rgba(74,222,128,.1); }
+
+/* ── CHAT MESSAGES ──────────────────────────────────── */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.msg {
+  max-width: 75%;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  position: relative;
+  animation: msgIn .2s ease;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.msg.kandidat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  align-self: flex-start;
+}
+
+.msg.hr {
+  background: rgba(74,222,128,.12);
+  border: 1px solid rgba(74,222,128,.2);
+  border-bottom-right-radius: 4px;
+  align-self: flex-end;
+}
+
+.msg-meta {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-family: "DM Mono", monospace;
+}
+
+.msg.hr .msg-meta { text-align: right; }
+
+/* ── CHAT INPUT ─────────────────────────────────────── */
+.chat-input-area {
+  padding: 12px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.chat-textarea {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: "DM Sans", sans-serif;
+  resize: none;
+  outline: none;
+  max-height: 120px;
+  min-height: 42px;
+  line-height: 1.5;
+  transition: border-color .15s;
+}
+
+.chat-textarea:focus { border-color: var(--accent); }
+
+.btn-send {
+  width: 42px;
+  height: 42px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: background .15s, transform .1s;
+  flex-shrink: 0;
+}
+
+.btn-send:hover   { background: var(--accent2); }
+.btn-send:active  { transform: scale(.94); }
+.btn-send:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── CATATAN PANEL ──────────────────────────────────── */
+.catatan-panel {
+  padding: 10px 16px;
+  background: rgba(251,191,36,.05);
+  border-top: 1px solid rgba(251,191,36,.15);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.catatan-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: "DM Sans", sans-serif;
+}
+
+.catatan-input::placeholder { color: var(--muted); }
+
+.btn-catatan {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(251,191,36,.3);
+  background: transparent;
+  color: var(--warning);
+  cursor: pointer;
+  font-family: "DM Sans", sans-serif;
+  transition: background .15s;
+}
+
+.btn-catatan:hover { background: rgba(251,191,36,.1); }
+
+/* ── NOTIF TOAST ────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+}
+
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  max-width: 300px;
+  animation: toastIn .3s ease;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.toast.success { border-color: rgba(74,222,128,.3); }
+.toast.error   { border-color: rgba(248,113,113,.3); }
+.toast.info    { border-color: rgba(96,165,250,.3); }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── LOADING ────────────────────────────────────────── */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── MOBILE ─────────────────────────────────────────── */
+@media (max-width: 700px) {
+  :root { --sidebar-w: 100vw; }
+
+  .sidebar {
+    position: fixed;
+    inset: 52px 0 0 0;
+    z-index: 50;
+    display: none;
+    width: 100%;
+  }
+
+  .sidebar.mobile-open { display: flex; }
+
+  .chat-panel {
+    position: fixed;
+    inset: 52px 0 0 0;
+    z-index: 40;
+  }
+
+  .back-btn { display: flex !important; }
+}
+
+.back-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--muted2);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: "DM Sans", sans-serif;
+  padding: 4px 0;
+}
+
+.new-msg-banner {
+  background: rgba(74,222,128,.1);
+  border: 1px solid rgba(74,222,128,.2);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--accent);
+  text-align: center;
+  cursor: pointer;
+  margin: 0 16px 8px;
+  display: none;
+}
+
+.new-msg-banner.show { display: block; animation: msgIn .3s ease; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <button class="back-btn" id="backBtn" onclick="showSidebar()">← Kembali</button>
+  <span class="topbar-logo">💬</span>
+  <span class="topbar-title">HR Dashboard</span>
+  <div class="wa-badges" id="waBadges"></div>
+  <div class="ws-status" id="wsStatus" title="Realtime"></div>
+  <button onclick="doLogout()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" title="Logout">⎋</button>
+</div>
+
+<!-- LAYOUT -->
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar mobile-open" id="sidebar">
+    <div class="sidebar-header">
+      <div style="display:flex;gap:8px;margin-bottom:2px;">
+      <button onclick="showModalKirimBaru()" style="flex:1;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);color:var(--accent);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:DM Sans,sans-serif;">+ Kirim Baru</button>
+      <button onclick="showModalStatus()" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--muted2);border-radius:8px;padding:7px;font-size:12px;cursor:pointer;font-family:DM Sans,sans-serif;">⚡ Status</button>
+    </div>
+    <div class="stats-row">
+        <div class="stat-chip active" data-filter="perlu_dibalas" onclick="setFilter('perlu_dibalas', this)">
+          <div class="stat-num" id="stat-perlu">0</div>
+          <div class="stat-label">Dibalas</div>
+        </div>
+        <div class="stat-chip" data-filter="menunggu" onclick="setFilter('menunggu', this)">
+          <div class="stat-num" id="stat-menunggu">0</div>
+          <div class="stat-label">Menunggu</div>
+        </div>
+        <div class="stat-chip" data-filter="all" onclick="setFilter('all', this)">
+          <div class="stat-num" id="stat-all">0</div>
+          <div class="stat-label">Semua</div>
+        </div>
+      </div>
+      <input class="search-input" type="text" placeholder="🔍 Cari nama atau nomor..." id="searchInput" oninput="filterList()">
+    </div>
+    <div class="kandidat-list" id="kandidatList"></div>
+    <div id="loadMoreBtn" style="display:none;padding:12px;text-align:center;">
+      <button onclick="loadMore()" style="background:var(--bg);border:1px solid var(--border);color:var(--muted2);border-radius:8px;padding:8px 20px;font-size:13px;cursor:pointer;font-family:DM Sans,sans-serif;">Muat lebih banyak</button>
+    </div>
+  </div>
+
+  <!-- CHAT PANEL -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-empty" id="chatEmpty">
+      <div class="chat-empty-icon">💬</div>
+      <div class="chat-empty-text">Pilih kandidat untuk memulai</div>
+    </div>
+
+    <!-- Chat aktif (disembunyikan kalau tidak ada yang dipilih) -->
+    <div id="chatActive" style="display:none;flex-direction:column;height:100%;">
+      <div class="chat-header">
+        <div class="chat-header-avatar" id="chatAvatar">?</div>
+        <div class="chat-header-info">
+          <div class="chat-header-nama" id="chatNama">—</div>
+          <div class="chat-header-meta" id="chatMeta">—</div>
+        </div>
+        <div class="chat-actions">
+          <button class="btn-action" onclick="showFixJid()" title="Perbaiki nomor WA">🔧</button>
+          <button class="btn-action success" onclick="selesaikan()">✓ Selesai</button>
+        </div>
+      </div>
+
+      <div class="new-msg-banner" id="newMsgBanner" onclick="scrollToBottom()">
+        ↓ Ada pesan baru
+      </div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="catatan-panel">
+        <span style="font-size:12px;color:var(--muted);white-space:nowrap;">📝</span>
+        <input class="catatan-input" id="catatanInput" placeholder="Tambah catatan..." onkeydown="if(e.key==='Enter')simpanCatatan()">
+        <button class="btn-catatan" onclick="simpanCatatan()">Simpan</button>
+      </div>
+
+      <div class="chat-input-area">
+        <textarea class="chat-textarea" id="msgInput" placeholder="Ketik pesan..." rows="1"
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="btn-send" id="sendBtn" onclick="kirimPesan()">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<!-- MODAL OVERLAY -->
+<div id="modalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;">
+  <div id="modalBox" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:400px;animation:fadeUp .2s ease;">
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ══════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════
+const token = localStorage.getItem("hr_token");
+if (!token) window.location.href = "/dashboard/login.html";
+
+let allKandidat    = [];
+let filteredList   = [];
+let activeId       = null;
+let activeKandidat = null;
+let currentFilter  = "perlu_dibalas";
+let ws             = null;
+let wsRetry        = 0;
+let atBottom       = true;
+
+// ══════════════════════════════════════════════════
+// API HELPERS
+// ══════════════════════════════════════════════════
+async function api(path, method = "GET", body = null) {
+  const opts = {
+    method,
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res  = await fetch(path, opts);
+  if (res.status === 401) { localStorage.removeItem("hr_token"); window.location.href = "/dashboard/login.html"; }
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════
+// LOAD DATA
+// ══════════════════════════════════════════════════
+async function loadStats() {
+  const data = await api("/api/stats");
+  const c    = data.counts || {};
+  document.getElementById("stat-perlu").textContent    = c.perlu_dibalas || 0;
+  document.getElementById("stat-menunggu").textContent = c.menunggu       || 0;
+  document.getElementById("stat-all").textContent      =
+    (c.perlu_dibalas||0) + (c.menunggu||0) + (c.baru||0);
+
+  // WA badges
+  const badges = document.getElementById("waBadges");
+  badges.innerHTML = "";
+  const wa = data.wa || {};
+  for (const [id, s] of Object.entries(wa)) {
+    const ok  = s.status === "connected";
+    const nom = s.jid?.replace(/@.*/, "") || id;
+    badges.innerHTML += `
+      <div class="wa-badge ${ok ? "connected" : "disconnected"}">
+        <div class="wa-dot"></div>
+        <span>${nom}</span>
+      </div>`;
+  }
+}
+
+// loadKandidat dipindah ke bawah (versi dengan pagination)
+
+function filterList() {
+  const q = document.getElementById("searchInput").value.toLowerCase();
+  filteredList = allKandidat.filter(k =>
+    k.nama?.toLowerCase().includes(q) ||
+    k.jid?.includes(q) ||
+    k.id?.toLowerCase().includes(q)
+  );
+  renderList();
+}
+
+function renderList() {
+  const el = document.getElementById("kandidatList");
+  if (!filteredList.length) {
+    el.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Tidak ada kandidat</div>`;
+    return;
+  }
+  el.innerHTML = filteredList.map(k => `
+    <div class="kandidat-item ${k.id === activeId ? "active" : ""}"
+         onclick="bukaChat('${k.id}')" id="item-${k.id}">
+      <div class="kandidat-avatar">${k.id.slice(0,2)}</div>
+      <div class="kandidat-info">
+        <div class="kandidat-top">
+          <div class="kandidat-nama">${esc(k.nama)}</div>
+          <div class="kandidat-time">${formatWaktu(k.waktu_pesan)}</div>
+        </div>
+        <div class="kandidat-preview">${esc(k.pesan_terakhir || "")}</div>
+        <div class="kandidat-bottom">
+          <span class="status-pill ${k.status}">${labelStatus(k.status)}</span>
+          <span class="wa-tag">${k.wa_id}</span>
+        </div>
+      </div>
+    </div>
+  `).join("");
+}
+
+// ══════════════════════════════════════════════════
+// BUKA CHAT
+// ══════════════════════════════════════════════════
+async function bukaChat(id) {
+  activeId = id;
+  renderList(); // Update active state
+
+  const data = await api(`/api/kandidat/${id}`);
+  activeKandidat = data;
+
+  // Update header
+  document.getElementById("chatAvatar").textContent = id.slice(0,2);
+  document.getElementById("chatNama").textContent   = data.nama;
+  document.getElementById("chatMeta").textContent   =
+    `${data.jid?.replace(/@.*/,"")} · ${data.wa_id} · ${labelStatus(data.status)}`;
+  document.getElementById("catatanInput").value = data.catatan || "";
+
+  // Render messages
+  renderMessages(data.riwayat || []);
+
+  // Show chat
+  document.getElementById("chatEmpty").style.display  = "none";
+  document.getElementById("chatActive").style.display = "flex";
+
+  // Mobile: sembunyikan sidebar, tampilkan chat
+  document.getElementById("sidebar").classList.remove("mobile-open");
+  document.getElementById("backBtn").style.display = "flex";
+
+  scrollToBottom();
+  document.getElementById("msgInput").focus();
+}
+
+function renderMessages(riwayat) {
+  const el = document.getElementById("chatMessages");
+  el.innerHTML = riwayat.map(r => {
+    const isHR = r.pengirim === "HR";
+    return `
+      <div class="msg ${isHR ? "hr" : "kandidat"}">
+        ${esc(r.pesan)}
+        <div class="msg-meta">${r.pengirim} · ${r.waktu}</div>
+      </div>`;
+  }).join("");
+  scrollToBottom(true);
+}
+
+function scrollToBottom(force = false) {
+  const el = document.getElementById("chatMessages");
+  if (force || atBottom) {
+    el.scrollTop = el.scrollHeight;
+    document.getElementById("newMsgBanner").classList.remove("show");
+  }
+}
+
+// ══════════════════════════════════════════════════
+// KIRIM PESAN
+// ══════════════════════════════════════════════════
+async function kirimPesan() {
+  const input = document.getElementById("msgInput");
+  const pesan = input.value.trim();
+  if (!pesan || !activeId) return;
+
+  const btn = document.getElementById("sendBtn");
+  btn.disabled = true;
+  input.value  = "";
+  input.style.height = "42px";
+
+  // Optimistic UI — tampilkan langsung
+  const el = document.getElementById("chatMessages");
+  const now = new Date().toLocaleString("id-ID", { timeZone:"Asia/Jakarta", day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+  el.innerHTML += `
+    <div class="msg hr" id="msg-sending">
+      ${esc(pesan)}
+      <div class="msg-meta">HR · ${now} · mengirim...</div>
+    </div>`;
+  scrollToBottom(true);
+
+  try {
+    const res = await api(`/api/kandidat/${activeId}/balas`, "POST", { pesan });
+    if (res.success) {
+      const msgEl = document.getElementById("msg-sending");
+      if (msgEl) msgEl.querySelector(".msg-meta").textContent = `HR · ${now}`;
+      toast("✓ Pesan masuk antrian", "success");
+      await loadKandidat();
+      await loadStats();
+    } else {
+      toast(res.error || "Gagal kirim", "error");
+      const msgEl = document.getElementById("msg-sending");
+      if (msgEl) msgEl.remove();
+      input.value = pesan;
+    }
+  } catch(err) {
+    toast("Gagal terhubung ke server", "error");
+  }
+
+  btn.disabled = false;
+  input.focus();
+}
+
+async function selesaikan() {
+  if (!activeId) return;
+  await api(`/api/kandidat/${activeId}/selesai`, "POST");
+  toast("✓ Ditandai selesai", "success");
+  activeId = null;
+  document.getElementById("chatEmpty").style.display  = "flex";
+  document.getElementById("chatActive").style.display = "none";
+  await loadKandidat();
+  await loadStats();
+}
+
+async function simpanCatatan() {
+  if (!activeId) return;
+  const catatan = document.getElementById("catatanInput").value;
+  await api(`/api/kandidat/${activeId}/catat`, "POST", { catatan });
+  toast("📝 Catatan disimpan", "info");
+}
+
+// ══════════════════════════════════════════════════
+// FILTER
+// ══════════════════════════════════════════════════
+function setFilter(filter, el) {
+  currentFilter = filter;
+  document.querySelectorAll(".stat-chip").forEach(c => c.classList.remove("active"));
+  el.classList.add("active");
+  loadKandidat();
+}
+
+// ══════════════════════════════════════════════════
+// WEBSOCKET REALTIME
+// ══════════════════════════════════════════════════
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "auth", token }));
+    wsRetry = 0;
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === "auth_ok") {
+      document.getElementById("wsStatus").classList.add("connected");
+    }
+
+    if (msg.type === "ping") {
+      ws.send(JSON.stringify({ type: "pong" }));
+    }
+
+    if (msg.type === "event") {
+      handleEvent(msg.event, msg.data);
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById("wsStatus").classList.remove("connected");
+    // Reconnect dengan exponential backoff
+    const delay = Math.min(1000 * Math.pow(2, wsRetry++), 30000);
+    setTimeout(connectWS, delay);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function handleEvent(event, data) {
+  if (["kandidat:dibuat","kandidat:diupdate","kandidat:media_masuk"].includes(event)) {
+    // Update list
+    loadKandidat();
+    loadStats();
+
+    // Kalau chat ini yang sedang dibuka — tambah pesan baru
+    if (data.id === activeId) {
+      const el  = document.getElementById("chatMessages");
+      const now = new Date().toLocaleString("id-ID", { timeZone:"Asia/Jakarta", day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+      el.innerHTML += `
+        <div class="msg kandidat">
+          ${esc(data.pesan || data.caption || "[media]")}
+          <div class="msg-meta">${esc(data.nama)} · ${now}</div>
+        </div>`;
+
+      if (atBottom) scrollToBottom(true);
+      else document.getElementById("newMsgBanner").classList.add("show");
+    } else {
+      // Notif untuk kandidat lain
+      toast(`💬 ${data.nama}: ${(data.pesan||"").slice(0,40)}`, "info");
+    }
+  }
+
+  if (event === "wa:terhubung") {
+    loadStats();
+    toast(`✅ ${data.waId} terhubung`, "success");
+  }
+
+  if (event === "wa:terputus") {
+    loadStats();
+    if (!data.willReconnect) toast(`❌ ${data.waId} terputus`, "error");
+  }
+}
+
+// ══════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    kirimPesan();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = "42px";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
+function showSidebar() {
+  document.getElementById("sidebar").classList.add("mobile-open");
+  document.getElementById("backBtn").style.display = "none";
+}
+
+function formatWaktu(ts) {
+  if (!ts) return "";
+  const d = Date.now() - ts;
+  const m = Math.floor(d/60000);
+  const j = Math.floor(m/60);
+  const h = Math.floor(j/24);
+  if (h > 0) return `${h}h`;
+  if (j > 0) return `${j}j`;
+  if (m > 0) return `${m}m`;
+  return "baru";
+}
+
+function labelStatus(s) {
+  return { perlu_dibalas:"● Dibalas", menunggu:"⏳ Menunggu", baru:"🆕 Baru",
+           selesai:"✓ Selesai", tidak_aktif:"✗ Nonaktif" }[s] || s;
+}
+
+function esc(s) {
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function toast(msg, type = "info") {
+  const el  = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${msg}</span>`;
+  document.getElementById("toastContainer").appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// Deteksi apakah user di paling bawah chat
+document.addEventListener("DOMContentLoaded", () => {
+  const msgs = document.getElementById("chatMessages");
+  msgs?.addEventListener("scroll", () => {
+    atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+    if (atBottom) document.getElementById("newMsgBanner").classList.remove("show");
+  });
+});
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+// PAGINATION
+// ══════════════════════════════════════════════════
+let currentPage = 1;
+const PAGE_SIZE  = 50;
+
+async function loadKandidat(reset = true) {
+  if (reset) currentPage = 1;
+  const filter = currentFilter === "all" ? {} : { status: currentFilter };
+  const params = new URLSearchParams({ ...filter, limit: PAGE_SIZE, page: currentPage });
+  const data   = await api(`/api/kandidat?${params}`);
+  const items  = data.daftar || [];
+  if (reset) allKandidat = items;
+  else allKandidat = [...allKandidat, ...items];
+  filterList();
+  document.getElementById("loadMoreBtn").style.display =
+    items.length === PAGE_SIZE ? "block" : "none";
+}
+
+async function loadMore() {
+  currentPage++;
+  await loadKandidat(false);
+}
+
+// ══════════════════════════════════════════════════
+// LOGOUT
+// ══════════════════════════════════════════════════
+function doLogout() {
+  localStorage.removeItem("hr_token");
+  window.location.href = "/dashboard/login.html";
+}
+
+// ══════════════════════════════════════════════════
+// MODAL HELPERS
+// ══════════════════════════════════════════════════
+function showModal(html) {
+  document.getElementById("modalContent").innerHTML = html;
+  const overlay = document.getElementById("modalOverlay");
+  overlay.style.display = "flex";
+  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+}
+
+function closeModal() {
+  document.getElementById("modalOverlay").style.display = "none";
+}
+
+// ══════════════════════════════════════════════════
+// MODAL: KIRIM KE NOMOR BARU
+// ══════════════════════════════════════════════════
+function showModalKirimBaru() {
+  showModal(`
+    <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">📤 Kirim ke Nomor Baru</h3>
+    <label style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Nomor WA</label>
+    <input id="modalNomor" placeholder="628xxxxxxxxxx" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:12px;font-family:DM Mono,monospace;">
+    <label style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Pesan</label>
+    <textarea id="modalPesan" rows="3" placeholder="Ketik pesan..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;resize:none;font-family:DM Sans,sans-serif;margin-bottom:16px;"></textarea>
+    <div style="display:flex;gap:8px;">
+      <button onclick="closeModal()" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--muted2);border-radius:8px;padding:10px;cursor:pointer;font-family:DM Sans,sans-serif;">Batal</button>
+      <button onclick="doKirimBaru()" style="flex:1;background:var(--accent);border:none;color:#000;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-family:DM Sans,sans-serif;">Kirim</button>
+    </div>
+  `);
+}
+
+async function doKirimBaru() {
+  const nomor = document.getElementById("modalNomor")?.value?.trim();
+  const pesan = document.getElementById("modalPesan")?.value?.trim();
+  if (!nomor || !pesan) { toast("Nomor dan pesan wajib diisi", "error"); return; }
+  const res = await api("/api/kirim", "POST", { nomor, pesan });
+  if (res.success) { toast("✓ Pesan masuk antrian", "success"); closeModal(); }
+  else toast(res.error || "Gagal kirim", "error");
+}
+
+// ══════════════════════════════════════════════════
+// MODAL: STATUS SISTEM
+// ══════════════════════════════════════════════════
+async function showModalStatus() {
+  const [stats, antrian, waStatus] = await Promise.all([
+    api("/api/stats"),
+    api("/api/antrian"),
+    api("/api/wa/status"),
+  ]);
+
+  const waHtml = Object.entries(waStatus || {}).map(([id, s]) =>
+    `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+      <span style="font-family:DM Mono,monospace;font-size:13px;">${id}</span>
+      <span style="font-size:12px;color:${s.status==="connected"?"var(--accent)":"var(--danger)"};">
+        ${s.status==="connected"?"✅ Terhubung":"❌ Terputus"}
+        ${s.jid ? " · "+s.jid.replace(/@.*/,"") : ""}
+      </span>
+    </div>`
+  ).join("") || '<div style="color:var(--muted);font-size:13px;">Tidak ada WA terhubung</div>';
+
+  showModal(`
+    <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">⚡ Status Sistem</h3>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">WhatsApp</div>
+      ${waHtml}
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Antrian Pesan</div>
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:600;font-family:DM Mono,monospace;">${antrian.panjangAntrian||0}</div>
+          <div style="font-size:11px;color:var(--muted);">Menunggu</div>
+        </div>
+        <div style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:600;font-family:DM Mono,monospace;">${antrian.sedangProses?"Ya":"Tidak"}</div>
+          <div style="font-size:11px;color:var(--muted);">Sedang Proses</div>
+        </div>
+      </div>
+    </div>
+    <button onclick="closeModal()" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--muted2);border-radius:8px;padding:10px;cursor:pointer;font-family:DM Sans,sans-serif;">Tutup</button>
+  `);
+}
+
+// ══════════════════════════════════════════════════
+// MODAL: FIX JID
+// ══════════════════════════════════════════════════
+function showFixJid() {
+  if (!activeId || !activeKandidat) return;
+  const nomorLama = activeKandidat.jid?.replace(/@.*/, "") || "";
+  showModal(`
+    <h3 style="font-size:16px;font-weight:600;margin-bottom:8px;">🔧 Perbaiki Nomor WA</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">[${activeId}] ${activeKandidat.nama}</p>
+    <label style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Nomor Lama</label>
+    <div style="font-family:DM Mono,monospace;font-size:13px;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:12px;color:var(--muted2);">${nomorLama}</div>
+    <label style="font-size:12px;color:var(--muted);font-family:DM Mono,monospace;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Nomor Baru</label>
+    <input id="fixJidInput" value="${nomorLama}" placeholder="628xxxxxxxxxx" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:16px;font-family:DM Mono,monospace;">
+    <div style="display:flex;gap:8px;">
+      <button onclick="closeModal()" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--muted2);border-radius:8px;padding:10px;cursor:pointer;font-family:DM Sans,sans-serif;">Batal</button>
+      <button onclick="doFixJid()" style="flex:1;background:var(--accent);border:none;color:#000;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-family:DM Sans,sans-serif;">Perbaiki</button>
+    </div>
+  `);
+}
+
+async function doFixJid() {
+  const nomor = document.getElementById("fixJidInput")?.value?.trim();
+  if (!nomor) return;
+  const res = await api(`/api/kandidat/${activeId}/fixjid`, "POST", { nomor });
+  if (res.success) {
+    toast("✓ Nomor diperbaiki", "success");
+    closeModal();
+    await bukaChat(activeId);
+  } else {
+    toast(res.error || "Gagal", "error");
+  }
+}
+
+async function init() {
+  await loadStats();
+  await loadKandidat();
+  connectWS();
+  // Refresh data setiap 30 detik sebagai fallback
+  setInterval(() => { loadStats(); loadKandidat(); }, 30000);
+}
+
+init();
+</script>
+</body>
+</html>
