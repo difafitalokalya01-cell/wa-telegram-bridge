@@ -112,6 +112,17 @@ app.get ("/api/blacklist",        middleware.authRequired, apiKandidat.getBlackl
 app.post("/api/blacklist",        middleware.authRequired, apiKandidat.tambahBlacklist);
 app.delete("/api/blacklist/:nomor", middleware.authRequired, apiKandidat.hapusBlacklist);
 
+// ── WA Management API ──────────────────────────────────────────
+app.post("/api/kandidat/:id/sync", middleware.authRequired, apiKandidat.syncChatKandidat);
+app.post("/api/wa/sync-unread/:waId", middleware.authRequired, apiKandidat.syncUnreadWA);
+app.get ("/api/wa/accounts",      middleware.authRequired, apiKandidat.getWaAccounts);
+app.post("/api/wa/daftar",        middleware.authRequired, apiKandidat.daftarWA);
+app.post("/api/wa/putus/:waId",   middleware.authRequired, apiKandidat.putuskanWA);
+
+// ── Settings API ───────────────────────────────────────────────
+app.get ("/api/settings/reminder",middleware.authRequired, apiKandidat.getReminderSettings);
+app.post("/api/settings/reminder",middleware.authRequired, apiKandidat.setReminderSettings);
+
 // ── Webhook bot bridge ─────────────────────────────────────────
 app.post("/webhook/bridge", async (req, res) => {
   res.sendStatus(200);

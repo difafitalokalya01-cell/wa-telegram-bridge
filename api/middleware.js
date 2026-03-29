@@ -14,7 +14,7 @@
 
 const crypto = require("crypto");
 
-const JWT_SECRET  = process.env.JWT_SECRET  || crypto.randomBytes(32).toString("hex");
+const JWT_SECRET  = process.env.APP_SECRET || process.env.JWT_SECRET  || crypto.randomBytes(32).toString("hex");
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "admin123";
 
 // ── Simple JWT tanpa library eksternal ────────────────────────

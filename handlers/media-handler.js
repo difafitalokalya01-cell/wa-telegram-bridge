@@ -130,6 +130,7 @@ function registerHandlers() {
           await db.updateKandidat(id, { status: "perlu_dibalas" });
         }
 
+        // Update kandidat dengan pesan terakhir
         if (pesanTerakhir) {
           await db.updateKandidat(id, {
             pesanTerakhir,
@@ -138,7 +139,16 @@ function registerHandlers() {
             reminder2:  false,
             reminder3:  false,
           });
-          await db.tambahRiwayat(id, nama || "?", pesanTerakhir);
+        }
+
+        // Simpan SEMUA pesan unread ke riwayat, bukan hanya pesan terakhir
+        if (semuaPesan && semuaPesan.length > 0) {
+          for (const pesan of semuaPesan) {
+            await db.tambahRiwayat(id, nama || "Kandidat", pesan);
+          }
+        } else if (pesanTerakhir) {
+          // Fallback kalau semuaPesan tidak ada
+          await db.tambahRiwayat(id, nama || "Kandidat", pesanTerakhir);
         }
       }
 

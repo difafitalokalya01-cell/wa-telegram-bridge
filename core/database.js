@@ -751,7 +751,9 @@ async function ping() {
   }, false);
 }
 
+// Export pool untuk dipakai langsung kalau perlu
 module.exports = {
+  pool,
   // Setup
   setupTabel,
   ping,

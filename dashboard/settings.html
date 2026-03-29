@@ -616,9 +616,12 @@ async function loadWAAccounts() {
           ${connected ? "Terhubung" : "Terputus"}
         </div>
         <div class="wa-actions">
-          ${!connected
+  ${!connected
             ? `<button class="btn primary" onclick="hubungkanWA('${acc.wa_id}')">QR</button>`
-            : `<button class="btn danger" onclick="putuskanWA('${acc.wa_id}')">Putus</button>`
+            : `
+              <button class="btn" onclick="syncSemuaChat('${acc.wa_id}')" id="syncAll-${acc.wa_id}" title="Sync semua chat">🔄 Sync</button>
+              <button class="btn danger" onclick="putuskanWA('${acc.wa_id}')">Putus</button>
+            `
           }
         </div>
       </div>`;
@@ -843,6 +846,20 @@ function toast(msg, type = "info") {
 // ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
+async function syncSemuaChat(waId) {
+  const btn = document.getElementById(`syncAll-${waId}`);
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Syncing..."; }
+  toast("🔄 Sync semua chat dimulai...", "info");
+  try {
+    const res = await api(`/api/wa/sync-unread/${waId}`, "POST");
+    if (res.success) toast(`✅ ${res.total} pesan dari ${waId} berhasil disync`, "success");
+    else toast(res.error || "Gagal sync", "error");
+  } catch(e) {
+    toast("Gagal terhubung", "error");
+  }
+  if (btn) { btn.disabled = false; btn.textContent = "🔄 Sync"; }
+}
+
 async function init() {
   connectWS();
   await Promise.all([

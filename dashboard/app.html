@@ -632,6 +632,7 @@ body {
   <span class="topbar-title">HR Dashboard</span>
   <div class="wa-badges" id="waBadges"></div>
   <div class="ws-status" id="wsStatus" title="Realtime"></div>
+  <button onclick="window.location.href='/dashboard/settings.html'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" title="Settings">⚙️</button>
   <button onclick="doLogout()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;" title="Logout">⎋</button>
 </div>
 
@@ -683,6 +684,7 @@ body {
           <div class="chat-header-meta" id="chatMeta">—</div>
         </div>
         <div class="chat-actions">
+          <button class="btn-action" onclick="syncChat()" id="syncBtn" title="Sync riwayat dari WA">🔄</button>
           <button class="btn-action" onclick="showFixJid()" title="Perbaiki nomor WA">🔧</button>
           <button class="btn-action success" onclick="selesaikan()">✓ Selesai</button>
         </div>
@@ -799,10 +801,10 @@ function renderList() {
       <div class="kandidat-avatar">${k.id.slice(0,2)}</div>
       <div class="kandidat-info">
         <div class="kandidat-top">
-          <div class="kandidat-nama">${esc(k.nama)}</div>
+          <div class="kandidat-nama">${esc(k.nama || k.jid?.replace(/@.*/, "") || k.id)}</div>
           <div class="kandidat-time">${formatWaktu(k.waktu_pesan)}</div>
         </div>
-        <div class="kandidat-preview">${esc(k.pesan_terakhir || "")}</div>
+        <div class="kandidat-preview">${esc(k.pesan_terakhir || "(belum ada pesan)")}</div>
         <div class="kandidat-bottom">
           <span class="status-pill ${k.status}">${labelStatus(k.status)}</span>
           <span class="wa-tag">${k.wa_id}</span>
@@ -824,13 +826,29 @@ async function bukaChat(id) {
 
   // Update header
   document.getElementById("chatAvatar").textContent = id.slice(0,2);
-  document.getElementById("chatNama").textContent   = data.nama;
+  document.getElementById("chatNama").textContent   = data.nama || data.jid?.replace(/@.*/, "") || id;
   document.getElementById("chatMeta").textContent   =
     `${data.jid?.replace(/@.*/,"")} · ${data.wa_id} · ${labelStatus(data.status)}`;
   document.getElementById("catatanInput").value = data.catatan || "";
 
+  // Kalau riwayat kosong tapi ada pesan_terakhir, buat entry sementara
+  let riwayat = data.riwayat || [];
+  if (riwayat.length === 0 && data.pesan_terakhir) {
+    const waktu = data.waktu_pesan
+      ? new Date(data.waktu_pesan).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta", day: "2-digit", month: "short",
+          hour: "2-digit", minute: "2-digit"
+        })
+      : "—";
+    riwayat = [{
+      pengirim: data.nama || "Kandidat",
+      pesan:    data.pesan_terakhir,
+      waktu:    waktu,
+    }];
+  }
+
   // Render messages
-  renderMessages(data.riwayat || []);
+  renderMessages(riwayat);
 
   // Show chat
   document.getElementById("chatEmpty").style.display  = "none";
@@ -1218,6 +1236,37 @@ async function doFixJid() {
   } else {
     toast(res.error || "Gagal", "error");
   }
+}
+
+// ══════════════════════════════════════════════════
+// SYNC CHAT DARI WA
+// ══════════════════════════════════════════════════
+async function syncChat() {
+  if (!activeId) return;
+  const btn = document.getElementById("syncBtn");
+  btn.disabled = true;
+  btn.textContent = "⏳";
+  toast("🔄 Menyinkronkan chat...", "info");
+
+  try {
+    const res = await api(`/api/kandidat/${activeId}/sync`, "POST");
+    if (res.success) {
+      if (res.jumlah > 0) {
+        toast(`✅ ${res.jumlah} pesan berhasil disinkronkan`, "success");
+        // Reload chat untuk tampilkan riwayat baru
+        await bukaChat(activeId);
+      } else {
+        toast("ℹ️ Tidak ada pesan baru ditemukan", "info");
+      }
+    } else {
+      toast(res.error || "Gagal sync", "error");
+    }
+  } catch(err) {
+    toast("Gagal terhubung ke server", "error");
+  }
+
+  btn.disabled = false;
+  btn.textContent = "🔄";
 }
 
 async function init() {

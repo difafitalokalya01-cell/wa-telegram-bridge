@@ -411,7 +411,7 @@ async function connectWA(waId, usePairingCode = false, nomorPonsel = null) {
         try {
           const msgs = await sock.fetchMessages({
             id:    jid,
-            count: Math.min(chat.unreadCount, 10),
+            count: Math.min(chat.unreadCount, 50),
           });
           if (msgs?.messages?.length > 0) {
             for (const msg of msgs.messages) {

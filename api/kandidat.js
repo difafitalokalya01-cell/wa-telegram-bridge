@@ -235,10 +235,215 @@ async function hapusBlacklist(req, res) {
   }
 }
 
+// GET /api/wa/accounts
+async function getWaAccounts(req, res) {
+  try {
+    const accounts = await require("../core/database").getWaAccounts();
+    res.json(accounts);
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/wa/daftar
+async function daftarWA(req, res) {
+  try {
+    const { waId } = req.body;
+    if (!waId) return res.status(400).json({ error: "waId wajib diisi" });
+    await require("../core/database").setWaAktif(waId, true);
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/wa/putus/:waId
+async function putuskanWA(req, res) {
+  try {
+    const { waId } = req.params;
+    await waManager?.disconnectWA(waId);
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// GET /api/settings/reminder
+async function getReminderSettings(req, res) {
+  try {
+    const fs  = require("fs");
+    const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+    res.json(cfg.reminderSettings || { reminder1: 30, reminder2: 60, reminder3: 120 });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/settings/reminder
+async function setReminderSettings(req, res) {
+  try {
+    const { reminder1, reminder2, reminder3 } = req.body;
+    if (!reminder1 || !reminder2 || !reminder3) return res.status(400).json({ error: "Semua field wajib diisi" });
+    const fs  = require("fs");
+    const cfg = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+    cfg.reminderSettings = { reminder1, reminder2, reminder3 };
+    fs.writeFileSync("./config.json", JSON.stringify(cfg, null, 2));
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+}
+
+// POST /api/wa/sync-unread/:waId — force sync pesan unread dari WA
+async function syncUnreadWA(req, res) {
+  try {
+    const { waId } = req.params;
+    const instance = waManager?.getInstance(waId);
+    if (!instance?.sock) return res.status(400).json({ error: `${waId} tidak terhubung` });
+
+    const sock = instance.sock;
+    let total  = 0;
+
+    // Ambil semua chat dari WA
+    const chats = await sock.groupFetchAllParticipating().catch(() => null);
+
+    // Alternatif: fetch via loadMessages per kandidat yang ada
+    const kandidats = await db.getDaftarKandidat({ waId, limit: 200 });
+
+    for (const kandidat of kandidats) {
+      try {
+        const msgs = await sock.fetchMessages({ id: kandidat.jid, count: 50 });
+        if (!msgs?.messages?.length) continue;
+
+        for (const msg of msgs.messages.reverse()) {
+          if (!msg.message) continue;
+          const msgType = Object.keys(msg.message)[0];
+          if (["protocolMessage","senderKeyDistributionMessage","reactionMessage"].includes(msgType)) continue;
+
+          const m = msg.message;
+          const teks =
+            m.conversation || m.extendedTextMessage?.text ||
+            m.imageMessage?.caption || m.videoMessage?.caption ||
+            (m.imageMessage ? "[foto]" : null) ||
+            (m.videoMessage ? "[video]" : null) ||
+            (m.audioMessage ? "[audio]" : null) || null;
+
+          if (!teks) continue;
+
+          const pengirim = msg.key.fromMe ? "HR" : (msg.pushName || kandidat.nama || "Kandidat");
+          const ts = msg.messageTimestamp
+            ? (typeof msg.messageTimestamp === "object"
+                ? msg.messageTimestamp.low * 1000
+                : msg.messageTimestamp * 1000)
+            : Date.now();
+
+          const waktu = new Date(ts).toLocaleString("id-ID", {
+            timeZone: "Asia/Jakarta", day: "2-digit", month: "short",
+            hour: "2-digit", minute: "2-digit",
+          });
+
+          await db.pool.query(`
+            INSERT INTO riwayat_chat (kandidat_id, pengirim, pesan, waktu, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT DO NOTHING
+          `, [kandidat.id, pengirim, teks.slice(0, 200), waktu, ts]);
+          total++;
+        }
+      } catch(e) { continue; }
+    }
+
+    res.json({ success: true, total, message: `${total} pesan disinkronkan dari ${kandidats.length} kandidat` });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   getDaftarKandidat, getDetailKandidat, balasKandidat,
   selesaikanKandidat, catatKandidat, fixJidKandidat, getStats,
   kirimKeNomorBaru, getWaStatus, requestQR, getAntrian,
   getBlacklist, tambahBlacklist, hapusBlacklist,
+  getWaAccounts, daftarWA, putuskanWA,
+  getReminderSettings, setReminderSettings,
+  syncChatKandidat, syncUnreadWA,
   setWaManager,
 };
+
+// POST /api/kandidat/:id/sync — fetch riwayat dari WA
+async function syncChatKandidat(req, res) {
+  try {
+    const id       = req.params.id.toUpperCase();
+    const kandidat = await db.getKandidat(id);
+    if (!kandidat) return res.status(404).json({ error: "Kandidat tidak ditemukan" });
+
+    const instance = waManager?.getInstance(kandidat.wa_id);
+    if (!instance?.sock) return res.status(400).json({ error: `${kandidat.wa_id} tidak terhubung` });
+
+    const sock   = instance.sock;
+    const jid    = kandidat.jid;
+    let   jumlah = 0;
+
+    try {
+      // Fetch pesan dari WA — maksimal 50 pesan terakhir
+      const msgs = await sock.fetchMessages({ id: jid, count: 50 });
+
+      if (msgs?.messages?.length > 0) {
+        // Proses dari yang paling lama ke paling baru
+        const sorted = msgs.messages.reverse();
+
+        for (const msg of sorted) {
+          // Skip pesan sistem
+          if (!msg.message) continue;
+          const msgType = Object.keys(msg.message)[0];
+          if (["protocolMessage","senderKeyDistributionMessage","reactionMessage"].includes(msgType)) continue;
+
+          // Ekstrak teks
+          const m = msg.message;
+          const teks =
+            m.conversation ||
+            m.extendedTextMessage?.text ||
+            m.imageMessage?.caption ||
+            m.videoMessage?.caption ||
+            m.documentMessage?.caption ||
+            (m.imageMessage ? "[foto]" : null) ||
+            (m.videoMessage ? "[video]" : null) ||
+            (m.documentMessage ? "[dokumen]" : null) ||
+            (m.audioMessage ? "[audio]" : null) ||
+            null;
+
+          if (!teks) continue;
+
+          // Tentukan pengirim
+          const pengirim = msg.key.fromMe ? "HR" : (msg.pushName || kandidat.nama || "Kandidat");
+
+          // Format waktu dari timestamp pesan
+          const ts = msg.messageTimestamp
+            ? (typeof msg.messageTimestamp === "object"
+                ? msg.messageTimestamp.low * 1000
+                : msg.messageTimestamp * 1000)
+            : Date.now();
+
+          const waktu = new Date(ts).toLocaleString("id-ID", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit", month: "short",
+            hour: "2-digit", minute: "2-digit",
+          });
+
+          // Simpan ke riwayat — pakai created_at dari timestamp asli
+          await db.pool.query(`
+            INSERT INTO riwayat_chat (kandidat_id, pengirim, pesan, waktu, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT DO NOTHING
+          `, [id, pengirim, teks.slice(0, 200), waktu, ts]);
+
+          jumlah++;
+        }
+      }
+    } catch (fetchErr) {
+      // fetchMessages mungkin tidak tersedia di semua versi Baileys
+      logger.warn("API-Kandidat", `fetchMessages gagal untuk ${jid}: ${fetchErr.message}`);
+      return res.status(400).json({
+        error: "Sync tidak tersedia — Baileys tidak support fetchMessages untuk koneksi ini",
+        detail: fetchErr.message
+      });
+    }
+
+    logger.info("API-Kandidat", `Sync [${id}] ${kandidat.nama}: ${jumlah} pesan disimpan`);
+    res.json({ success: true, jumlah, message: `${jumlah} pesan berhasil disinkronkan` });
+
+  } catch(err) {
+    logger.error("API-Kandidat", `sync error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+}
+
